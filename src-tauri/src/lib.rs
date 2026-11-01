@@ -9,7 +9,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::list_emotes,
-            commands::import_folder,
+            commands::import_paths,
+            commands::import_raw_bytes,
+            commands::import_from_url,
+            commands::import_from_clipboard,
             commands::get_storage_path,
             commands::set_storage_path,
             commands::get_db_path,

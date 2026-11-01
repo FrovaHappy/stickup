@@ -13,6 +13,36 @@ use image::{AnimationDecoder, Frame, ImageFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub enum ClipboardPayload {
+    FilePath(PathBuf),
+    RawImageBytes(Vec<u8>),
+    RgbaImage {
+        rgba: Vec<u8>,
+        width: u32,
+        height: u32,
+    },
+    TextUrl(String),
+}
+
+pub fn read_clipboard_payload() -> Result<ClipboardPayload, String> {
+    #[cfg(windows)]
+    {
+        windows::read_from_clipboard()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux::read_from_clipboard()
+    }
+    #[cfg(target_os = "android")]
+    {
+        android::read_from_clipboard()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
+    {
+        Err("Lectura de portapapeles no soportada en esta plataforma".to_string())
+    }
+}
+
 pub fn copy_emote(
     path: &str,
     format: &str,

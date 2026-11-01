@@ -1,56 +1,16 @@
 <script lang="ts">
-  import { open } from '@tauri-apps/plugin-dialog';
   import { api } from '$lib/services/api';
   import { loadEmotes } from '$lib/stores/emotes';
   import { formatFileSize } from '$lib/utils/format';
   import type { ResyncStats } from '$lib/types/emote';
+  import AddEmoteModal from './AddEmoteModal.svelte';
 
-  let importing = false;
   let resyncing = false;
   let statusMsg = '';
   let resyncStats: ResyncStats | null = null;
 
-  async function pickFolderAndImport() {
-    if (importing || resyncing) return;
-    statusMsg = '';
-    resyncStats = null;
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: 'Seleccionar carpeta con imágenes para importar'
-      });
-
-      if (!selected) return;
-
-      const folderPath = Array.isArray(selected) ? selected[0] : selected;
-      if (!folderPath) return;
-
-      importing = true;
-      statusMsg = 'Importando imágenes...';
-
-      const imported = await api.importFolder(folderPath);
-      await loadEmotes();
-
-      if (imported && imported.length > 0) {
-        statusMsg = `¡${imported.length} emote(s) importados exitosamente!`;
-      } else {
-        statusMsg = 'No se encontraron imágenes compatibles (.png, .jpg, .gif, .webp) en la carpeta.';
-      }
-
-      setTimeout(() => {
-        statusMsg = '';
-      }, 4000);
-    } catch (err: any) {
-      console.error('Error importando carpeta:', err);
-      statusMsg = `Error: ${err?.message || err}`;
-    } finally {
-      importing = false;
-    }
-  }
-
   async function handleResync() {
-    if (resyncing || importing) return;
+    if (resyncing) return;
     statusMsg = '';
     resyncStats = null;
     resyncing = true;
@@ -75,23 +35,16 @@
 
 <div class="actions-wrapper">
   <div class="buttons-row">
-    <button
-      type="button"
-      class="action-btn primary"
-      on:click={pickFolderAndImport}
-      disabled={importing || resyncing}
-    >
-      {importing ? '⏳ Importando...' : '📁 Importar Carpeta'}
-    </button>
+    <AddEmoteModal />
 
     <button
       type="button"
       class="action-btn secondary"
       on:click={handleResync}
-      disabled={resyncing || importing}
+      disabled={resyncing}
       title="Escanea el directorio activo, convierte PNG/JPG a WebP eliminando originales y sincroniza la base de datos"
     >
-      {resyncing ? '🔄 Resincronizando y optimizando...' : '🔄 Resincronizar Directorio'}
+      {resyncing ? '🔄 Resincronizando...' : '🔄 Resincronizar'}
     </button>
   </div>
 
@@ -161,39 +114,34 @@
     align-items: center;
     gap: 12px;
     margin: 12px 0 20px 0;
+    width: 100%;
   }
   .buttons-row {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
     justify-content: center;
-  }
-  .action-btn {
-    border: none;
-    border-radius: 8px;
-    padding: 10px 18px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
-  }
-  .action-btn.primary {
-    background: #6366f1;
-    color: white;
-    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.25);
-  }
-  .action-btn.primary:hover:not(:disabled) {
-    background: #4f46e5;
-    transform: translateY(-1px);
+    align-items: center;
   }
   .action-btn.secondary {
     background: rgba(16, 185, 129, 0.14);
-    color: #10b981;
+    color: #059669;
     border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
   }
   .action-btn.secondary:hover:not(:disabled) {
     background: rgba(16, 185, 129, 0.24);
     transform: translateY(-1px);
+  }
+  @media (prefers-color-scheme: dark) {
+    .action-btn.secondary {
+      color: #10b981;
+    }
   }
   .action-btn:disabled {
     opacity: 0.6;
@@ -201,7 +149,7 @@
   }
   .status-text {
     font-size: 13px;
-    color: #9ca3af;
+    color: #ef4444;
     min-height: 20px;
   }
   .stats-panel {

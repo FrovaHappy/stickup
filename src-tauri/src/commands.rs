@@ -1,4 +1,4 @@
-use crate::clipboard;
+use crate::clipboard::{self, ClipboardPayload};
 use crate::db::{
     clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
     set_active_db_dir,
@@ -9,7 +9,9 @@ use image::{AnimationDecoder, GenericImageView, ImageFormat};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn extract_stem(path: &Path) -> String {
     path.file_stem()
@@ -33,6 +35,110 @@ fn insert_emote_record(
     )
     .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
+}
+
+fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, String> {
+    if bytes.is_empty() {
+        return Err("Los datos de la imagen están vacíos".to_string());
+    }
+
+    let conn = ensure_db()?;
+    let dir = get_active_emotes_dir(&conn);
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    let abs_dir = dir.canonicalize().unwrap_or(dir);
+
+    let guessed = image::guess_format(bytes)
+        .map_err(|e| format!("El contenido no es una imagen válida: {}", e))?;
+
+    let mut is_animated_gif = false;
+    let mut gif_dimensions: Option<(u32, u32)> = None;
+
+    if guessed == ImageFormat::Gif {
+        if let Ok(decoder) = GifDecoder::new(Cursor::new(bytes)) {
+            if let Ok(frames) = decoder.into_frames().collect_frames() {
+                if frames.len() > 1 {
+                    is_animated_gif = true;
+                    if let Some(first) = frames.first() {
+                        gif_dimensions = Some((first.buffer().width(), first.buffer().height()));
+                    }
+                }
+            }
+        }
+    }
+
+    let target_ext = if is_animated_gif { "gif" } else { "webp" };
+    let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
+
+    let (w, h, format) = if is_animated_gif {
+        fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        let (w, h) = gif_dimensions.unwrap_or_else(|| {
+            image::load_from_memory(bytes)
+                .map(|i| i.dimensions())
+                .unwrap_or((0, 0))
+        });
+        (w as i32, h as i32, "gif".to_string())
+    } else if guessed == ImageFormat::WebP {
+        let (w, h) = image::load_from_memory(bytes)
+            .map(|i| i.dimensions())
+            .map_err(|e| format!("Error leyendo imagen WebP: {}", e))?;
+        fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        (w as i32, h as i32, "webp".to_string())
+    } else {
+        let img = image::load_from_memory(bytes)
+            .map_err(|e| format!("Error decodificando imagen: {}", e))?;
+        let (w, h) = img.dimensions();
+        let mut out_file = fs::File::create(&dest).map_err(|e| e.to_string())?;
+        img.write_to(&mut out_file, ImageFormat::WebP)
+            .map_err(|e| format!("Error convirtiendo a WebP: {}", e))?;
+        (w as i32, h as i32, "webp".to_string())
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let dest_str = normalize_path(&dest);
+    let clean_name = if emote_name.trim().is_empty() {
+        "emote".to_string()
+    } else {
+        emote_name.trim().to_string()
+    };
+
+    let id = insert_emote_record(&conn, &clean_name, &dest_str, w, h, &format, &now)?;
+    let size = fs::metadata(&dest).map(|m| m.len()).ok();
+
+    Ok(Emote {
+        id,
+        name: clean_name,
+        tag: None,
+        path: dest_str,
+        original_width: w,
+        original_height: h,
+        format,
+        created_at: now,
+        file_size: size,
+        copy_count: 0,
+        interaction_count: 0,
+        last_used_at: None,
+    })
+}
+
+fn infer_name_from_url(url: &str) -> String {
+    let without_query = url.split('?').next().unwrap_or(url).split('#').next().unwrap_or(url);
+    let last_segment = without_query
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("emote");
+    let stem = Path::new(last_segment)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("emote")
+        .trim();
+    if stem.is_empty() {
+        "emote".to_string()
+    } else {
+        stem.to_string()
+    }
 }
 
 #[tauri::command]
@@ -201,13 +307,89 @@ pub fn set_db_path(path: String, migrate: Option<bool>) -> Result<String, String
     set_active_db_dir(&path, migrate.unwrap_or(true))
 }
 
-#[tauri::command]
-pub fn import_folder(folder_path: String) -> Result<Vec<Emote>, String> {
-    let p = Path::new(&folder_path);
-    if !p.exists() || !p.is_dir() {
-        return Err(format!("La carpeta no existe o no es válida: {}", folder_path));
+fn import_single_file(
+    conn: &Connection,
+    abs_dir: &Path,
+    src: &Path,
+) -> Result<Option<Emote>, String> {
+    if !src.is_file() {
+        return Ok(None);
     }
 
+    let orig_ext = match src.extension().and_then(|e| e.to_str()) {
+        Some(ext) => ext.to_lowercase(),
+        None => return Ok(None),
+    };
+
+    if !matches!(orig_ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+        return Ok(None);
+    }
+
+    // Detectar si es un GIF animado (>1 fotograma) para conservar su secuencia intacta
+    let mut is_animated_gif = false;
+    let mut gif_dimensions: Option<(u32, u32)> = None;
+    if orig_ext == "gif" {
+        if let Ok(file) = fs::File::open(src) {
+            if let Ok(decoder) = GifDecoder::new(std::io::BufReader::new(file)) {
+                if let Ok(frames) = decoder.into_frames().collect_frames() {
+                    if frames.len() > 1 {
+                        is_animated_gif = true;
+                        if let Some(first) = frames.first() {
+                            gif_dimensions =
+                                Some((first.buffer().width(), first.buffer().height()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let target_ext = if is_animated_gif { "gif" } else { "webp" };
+    let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
+
+    let (w, h, format) = if is_animated_gif {
+        fs::copy(src, &dest).map_err(|e| e.to_string())?;
+        let (w, h) = gif_dimensions.unwrap_or_else(|| {
+            image::open(&dest).map(|i| i.dimensions()).unwrap_or((0, 0))
+        });
+        (w as i32, h as i32, "gif".to_string())
+    } else if orig_ext != "webp" {
+        let img = image::open(src).map_err(|e| format!("Error abriendo {:?}: {}", src, e))?;
+        let (w, h) = img.dimensions();
+        let mut file = fs::File::create(&dest).map_err(|e| e.to_string())?;
+        img.write_to(&mut file, ImageFormat::WebP)
+            .map_err(|e| format!("Error convirtiendo a WebP: {}", e))?;
+        (w as i32, h as i32, "webp".to_string())
+    } else {
+        fs::copy(src, &dest).map_err(|e| e.to_string())?;
+        let (w, h) = image::open(&dest).map(|i| i.dimensions()).unwrap_or((0, 0));
+        (w as i32, h as i32, "webp".to_string())
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let dest_str = normalize_path(&dest);
+    let emote_name = extract_stem(src);
+
+    let id = insert_emote_record(conn, &emote_name, &dest_str, w, h, &format, &now)?;
+    let size = fs::metadata(&dest).map(|m| m.len()).ok();
+    Ok(Some(Emote {
+        id,
+        name: emote_name,
+        tag: None,
+        path: dest_str,
+        original_width: w,
+        original_height: h,
+        format,
+        created_at: now,
+        file_size: size,
+        copy_count: 0,
+        interaction_count: 0,
+        last_used_at: None,
+    }))
+}
+
+#[tauri::command]
+pub fn import_paths(paths: Vec<String>) -> Result<Vec<Emote>, String> {
     let conn = ensure_db()?;
     let dir = get_active_emotes_dir(&conn);
     if !dir.exists() {
@@ -216,86 +398,125 @@ pub fn import_folder(folder_path: String) -> Result<Vec<Emote>, String> {
     let abs_dir = dir.canonicalize().unwrap_or(dir);
 
     let mut created = Vec::new();
-    let entries = fs::read_dir(p).map_err(|e| e.to_string())?;
 
-    for entry in entries.flatten() {
-        let src = entry.path();
-        if !src.is_file() {
+    for raw in paths {
+        let p = Path::new(&raw);
+        if !p.exists() {
             continue;
         }
-
-        let orig_ext = match src.extension().and_then(|e| e.to_str()) {
-            Some(ext) => ext.to_lowercase(),
-            None => continue,
-        };
-
-        if !matches!(orig_ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
-            continue;
-        }
-
-        // Detectar si es un GIF animado (>1 fotograma) para conservar su secuencia intacta
-        let mut is_animated_gif = false;
-        let mut gif_dimensions: Option<(u32, u32)> = None;
-        if orig_ext == "gif" {
-            if let Ok(file) = fs::File::open(&src) {
-                if let Ok(decoder) = GifDecoder::new(std::io::BufReader::new(file)) {
-                    if let Ok(frames) = decoder.into_frames().collect_frames() {
-                        if frames.len() > 1 {
-                            is_animated_gif = true;
-                            if let Some(first) = frames.first() {
-                                gif_dimensions =
-                                    Some((first.buffer().width(), first.buffer().height()));
-                            }
-                        }
-                    }
+        if p.is_dir() {
+            let entries = fs::read_dir(p).map_err(|e| e.to_string())?;
+            for entry in entries.flatten() {
+                if let Some(emote) = import_single_file(&conn, &abs_dir, &entry.path())? {
+                    created.push(emote);
                 }
             }
+        } else if p.is_file() {
+            if let Some(emote) = import_single_file(&conn, &abs_dir, p)? {
+                created.push(emote);
+            }
         }
-
-        let target_ext = if is_animated_gif { "gif" } else { "webp" };
-        let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
-
-        let (w, h, format) = if is_animated_gif {
-            fs::copy(&src, &dest).map_err(|e| e.to_string())?;
-            let (w, h) = gif_dimensions.unwrap_or_else(|| {
-                image::open(&dest).map(|i| i.dimensions()).unwrap_or((0, 0))
-            });
-            (w as i32, h as i32, "gif".to_string())
-        } else if orig_ext != "webp" {
-            let img = image::open(&src).map_err(|e| format!("Error abriendo {:?}: {}", src, e))?;
-            let (w, h) = img.dimensions();
-            let mut file = fs::File::create(&dest).map_err(|e| e.to_string())?;
-            img.write_to(&mut file, ImageFormat::WebP)
-                .map_err(|e| format!("Error convirtiendo a WebP: {}", e))?;
-            (w as i32, h as i32, "webp".to_string())
-        } else {
-            fs::copy(&src, &dest).map_err(|e| e.to_string())?;
-            let (w, h) = image::open(&dest).map(|i| i.dimensions()).unwrap_or((0, 0));
-            (w as i32, h as i32, "webp".to_string())
-        };
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let dest_str = normalize_path(&dest);
-        let emote_name = extract_stem(&src);
-
-        let id = insert_emote_record(&conn, &emote_name, &dest_str, w, h, &format, &now)?;
-        let size = fs::metadata(&dest).map(|m| m.len()).ok();
-        created.push(Emote {
-            id,
-            name: emote_name,
-            tag: None,
-            path: dest_str,
-            original_width: w,
-            original_height: h,
-            format,
-            created_at: now,
-            file_size: size,
-            copy_count: 0,
-            interaction_count: 0,
-            last_used_at: None,
-        });
     }
+
     Ok(created)
+}
+
+#[tauri::command]
+pub fn import_raw_bytes(bytes: Vec<u8>, name: Option<String>) -> Result<Emote, String> {
+    let clean_name = name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("emote");
+    save_raw_bytes_as_emote(&bytes, clean_name)
+}
+
+#[tauri::command]
+pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, String> {
+    let clean_url = url.trim();
+    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
+        return Err("La URL debe comenzar con http:// o https://".to_string());
+    }
+
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-L",
+        "-s",
+        "-S",
+        "-f",
+        "--max-time",
+        "25",
+        "-A",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StickUp/1.0",
+        clean_url,
+    ]);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("No se pudo descargar desde la URL: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Error al descargar la URL: {}", stderr.trim()));
+    }
+
+    let emote_name = name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| infer_name_from_url(clean_url));
+
+    save_raw_bytes_as_emote(&output.stdout, &emote_name)
+}
+
+#[tauri::command]
+pub fn import_from_clipboard(name: Option<String>) -> Result<Emote, String> {
+    let custom_name = name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+
+    match clipboard::read_clipboard_payload()? {
+        ClipboardPayload::FilePath(path) => {
+            let bytes = fs::read(&path)
+                .map_err(|e| format!("No se pudo leer el archivo del portapapeles: {}", e))?;
+            let final_name = custom_name.unwrap_or_else(|| extract_stem(&path));
+            save_raw_bytes_as_emote(&bytes, &final_name)
+        }
+        ClipboardPayload::RawImageBytes(bytes) => {
+            let final_name = custom_name.unwrap_or_else(|| {
+                format!("clipboard_{}", &uuid::Uuid::new_v4().to_string()[..6])
+            });
+            save_raw_bytes_as_emote(&bytes, &final_name)
+        }
+        ClipboardPayload::RgbaImage {
+            rgba,
+            width,
+            height,
+        } => {
+            let img_buf = image::RgbaImage::from_raw(width, height, rgba)
+                .ok_or_else(|| "Buffer RGBA inválido en el portapapeles".to_string())?;
+            let dyn_img = image::DynamicImage::ImageRgba8(img_buf);
+            let mut buf = Cursor::new(Vec::new());
+            dyn_img
+                .write_to(&mut buf, ImageFormat::WebP)
+                .map_err(|e| format!("Error codificando imagen del portapapeles: {}", e))?;
+            let final_name = custom_name.unwrap_or_else(|| {
+                format!("clipboard_{}", &uuid::Uuid::new_v4().to_string()[..6])
+            });
+            save_raw_bytes_as_emote(&buf.into_inner(), &final_name)
+        }
+        ClipboardPayload::TextUrl(url) => import_from_url(url, custom_name),
+    }
 }
 
 #[tauri::command]

@@ -8,7 +8,13 @@ export const api = {
     invoke<string>('set_storage_path', { path, migrate }),
   getDbPath: () => invoke<string>('get_db_path'),
   setDbPath: (path: string, migrate = true) => invoke<string>('set_db_path', { path, migrate }),
-  importFolder: (folderPath: string) => invoke<Emote[]>('import_folder', { folderPath }),
+  importPaths: (paths: string[]) => invoke<Emote[]>('import_paths', { paths }),
+  importRawBytes: (bytes: number[], name?: string) =>
+    invoke<Emote>('import_raw_bytes', { bytes, name: name?.trim() || null }),
+  importFromUrl: (url: string, name?: string) =>
+    invoke<Emote>('import_from_url', { url, name: name?.trim() || null }),
+  importFromClipboard: (name?: string) =>
+    invoke<Emote>('import_from_clipboard', { name: name?.trim() || null }),
   deleteEmote: (id: number) => invoke<boolean>('delete_emote', { id }),
   updateTag: (id: number, name: string, tag: string) =>
     invoke<boolean>('update_tag', { id, name, tag }),

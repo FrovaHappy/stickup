@@ -1,3 +1,4 @@
+use super::ClipboardPayload;
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -64,5 +65,24 @@ pub fn copy_file_and_image_to_clipboard(
     }
 
     Ok(())
+}
+
+pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
+    for mime in ["image/gif", "image/webp", "image/png", "image/jpeg"] {
+        if let Ok(out) = Command::new("wl-paste").args(["--type", mime]).output() {
+            if out.status.success() && !out.stdout.is_empty() {
+                return Ok(ClipboardPayload::RawImageBytes(out.stdout));
+            }
+        }
+        if let Ok(out) = Command::new("xclip")
+            .args(["-selection", "clipboard", "-t", mime, "-o"])
+            .output()
+        {
+            if out.status.success() && !out.stdout.is_empty() {
+                return Ok(ClipboardPayload::RawImageBytes(out.stdout));
+            }
+        }
+    }
+    Err("El portapapeles no contiene una imagen compatible".to_string())
 }
 

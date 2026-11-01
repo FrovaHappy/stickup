@@ -1,17 +1,21 @@
+use super::ClipboardPayload;
 use std::ffi::CString;
 use std::mem::size_of;
+use std::path::PathBuf;
 use std::ptr;
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::{BITMAPINFOHEADER, BI_RGB};
 use windows_sys::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatA, SetClipboardData,
+    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    RegisterClipboardFormatA, SetClipboardData,
 };
 use windows_sys::Win32::System::Memory::{
-    GlobalAlloc, GlobalLock, GlobalUnlock, GHND, GMEM_MOVEABLE,
+    GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GHND, GMEM_MOVEABLE,
 };
-use windows_sys::Win32::UI::Shell::DROPFILES;
+use windows_sys::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
 
 const CF_DIB: u32 = 8;
+const CF_UNICODETEXT: u32 = 13;
 const CF_HDROP: u32 = 15;
 
 pub fn copy_file_and_image_to_clipboard(
@@ -139,6 +143,174 @@ pub fn copy_file_and_image_to_clipboard(
 
         CloseClipboard();
         Ok(())
+    }
+}
+
+pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
+    unsafe {
+        if OpenClipboard(0 as HWND) == 0 {
+            return Err("No se pudo abrir el portapapeles de Windows".to_string());
+        }
+
+        // 1. CF_HDROP: Archivo(s) copiado(s) desde el Explorador, Discord, Telegram, etc.
+        if IsClipboardFormatAvailable(CF_HDROP) != 0 {
+            let h_data = GetClipboardData(CF_HDROP);
+            if !h_data.is_null() {
+                let h_drop = h_data as HDROP;
+                let len = DragQueryFileW(h_drop, 0, ptr::null_mut(), 0);
+                if len > 0 {
+                    let mut buf = vec![0u16; (len + 1) as usize];
+                    let copied = DragQueryFileW(h_drop, 0, buf.as_mut_ptr(), len + 1);
+                    if copied > 0 {
+                        buf.truncate(copied as usize);
+                        let path_str = String::from_utf16_lossy(&buf);
+                        let p = PathBuf::from(&path_str);
+                        if p.exists() && p.is_file() {
+                            CloseClipboard();
+                            return Ok(ClipboardPayload::FilePath(p));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Formatos MIME registrados (conservan animación GIF, transparencia PNG/WebP, etc.)
+        let mime_candidates = [
+            "image/gif",
+            "GIF",
+            "image/webp",
+            "WEBP",
+            "PNG",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "JFIF",
+        ];
+
+        for fmt_name in mime_candidates {
+            if let Ok(c_str) = CString::new(fmt_name) {
+                let cf = RegisterClipboardFormatA(c_str.as_ptr() as *const u8);
+                if cf != 0 && IsClipboardFormatAvailable(cf) != 0 {
+                    let h_data = GetClipboardData(cf);
+                    if !h_data.is_null() {
+                        let size = GlobalSize(h_data);
+                        let ptr_data = GlobalLock(h_data) as *const u8;
+                        if !ptr_data.is_null() && size > 0 {
+                            let mut bytes = vec![0u8; size];
+                            ptr::copy_nonoverlapping(ptr_data, bytes.as_mut_ptr(), size);
+                            GlobalUnlock(h_data);
+                            CloseClipboard();
+                            return Ok(ClipboardPayload::RawImageBytes(bytes));
+                        }
+                        if !ptr_data.is_null() {
+                            GlobalUnlock(h_data);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. CF_DIB: Capturas de pantalla, "Copiar imagen" desde navegador o visor
+        if IsClipboardFormatAvailable(CF_DIB) != 0 {
+            let h_dib = GetClipboardData(CF_DIB);
+            if !h_dib.is_null() {
+                let total_size = GlobalSize(h_dib);
+                let p_dib = GlobalLock(h_dib) as *const u8;
+                if !p_dib.is_null() && total_size >= size_of::<BITMAPINFOHEADER>() {
+                    let bmi = &*(p_dib as *const BITMAPINFOHEADER);
+                    let width = bmi.biWidth.unsigned_abs();
+                    let height = bmi.biHeight.unsigned_abs();
+                    let is_bottom_up = bmi.biHeight > 0;
+                    let bit_count = bmi.biBitCount;
+                    let header_size = bmi.biSize as usize;
+
+                    if width > 0 && height > 0 && (bit_count == 32 || bit_count == 24) {
+                        let bytes_per_px = (bit_count / 8) as u32;
+                        let row_stride = ((width * (bit_count as u32) + 31) / 32) * 4;
+                        let mut pixel_offset = header_size;
+                        // Si biCompression == BI_BITFIELDS (3), hay 12 bytes extra de máscaras de color
+                        if bmi.biCompression == 3 && total_size >= header_size + 12 {
+                            pixel_offset += 12;
+                        }
+
+                        let needed = pixel_offset + (row_stride * height) as usize;
+                        if total_size >= needed {
+                            let pixels = p_dib.add(pixel_offset);
+                            let mut rgba = vec![0u8; (width * height * 4) as usize];
+                            let mut any_nonzero_alpha = false;
+
+                            for y in 0..height {
+                                let src_y = if is_bottom_up { height - 1 - y } else { y };
+                                let src_row = (src_y * row_stride) as usize;
+                                let dst_row = (y * width * 4) as usize;
+
+                                for x in 0..width {
+                                    let s = src_row + (x * bytes_per_px) as usize;
+                                    let d = dst_row + (x * 4) as usize;
+                                    let b = *pixels.add(s);
+                                    let g = *pixels.add(s + 1);
+                                    let r = *pixels.add(s + 2);
+                                    let a = if bit_count == 32 {
+                                        let alpha = *pixels.add(s + 3);
+                                        if alpha != 0 {
+                                            any_nonzero_alpha = true;
+                                        }
+                                        alpha
+                                    } else {
+                                        255
+                                    };
+
+                                    rgba[d] = r;
+                                    rgba[d + 1] = g;
+                                    rgba[d + 2] = b;
+                                    rgba[d + 3] = a;
+                                }
+                            }
+
+                            if bit_count == 32 && !any_nonzero_alpha {
+                                for px in rgba.chunks_exact_mut(4) {
+                                    px[3] = 255;
+                                }
+                            }
+
+                            GlobalUnlock(h_dib);
+                            CloseClipboard();
+                            return Ok(ClipboardPayload::RgbaImage {
+                                rgba,
+                                width,
+                                height,
+                            });
+                        }
+                    }
+                    GlobalUnlock(h_dib);
+                }
+            }
+        }
+
+        // 4. CF_UNICODETEXT: URL copiada en el portapapeles
+        if IsClipboardFormatAvailable(CF_UNICODETEXT) != 0 {
+            let h_text = GetClipboardData(CF_UNICODETEXT);
+            if !h_text.is_null() {
+                let byte_size = GlobalSize(h_text);
+                let p_text = GlobalLock(h_text) as *const u16;
+                if !p_text.is_null() && byte_size >= 2 {
+                    let max_u16 = byte_size / 2;
+                    let slice = std::slice::from_raw_parts(p_text, max_u16);
+                    let end = slice.iter().position(|&c| c == 0).unwrap_or(max_u16);
+                    let text = String::from_utf16_lossy(&slice[..end]).trim().to_string();
+                    GlobalUnlock(h_text);
+                    if text.starts_with("http://") || text.starts_with("https://") {
+                        CloseClipboard();
+                        return Ok(ClipboardPayload::TextUrl(text));
+                    }
+                } else if !p_text.is_null() {
+                    GlobalUnlock(h_text);
+                }
+            }
+        }
+
+        CloseClipboard();
+        Err("El portapapeles no contiene una imagen ni una URL válida".to_string())
     }
 }
 

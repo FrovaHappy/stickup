@@ -59,8 +59,9 @@ src/
     ├── utils/
     │   └── format.ts                # Utilidades puras (formatFileSize, cálculo de dimensiones)
     └── components/
-        ├── StorageSettings.svelte   # Selector de ruta de guardado
-        ├── ImportButton.svelte      # Botones de importación y resincronización con estadísticas
+        ├── StorageSettings.svelte   # Selector de ruta de guardado y directorio de BD
+        ├── AddEmoteModal.svelte     # Botón (+ Agregar) y modal unificado (archivos, carpeta, portapapeles, URL y Drag & Drop)
+        ├── ImportButton.svelte      # Contenedor de acciones de importación y resincronización con estadísticas
         ├── SearchFilterBar.svelte   # Barra de búsqueda por nombre/tags y filtros preestablecidos
         ├── EmoteGrid.svelte         # Cuadrícula de emotes
         ├── EmoteCard.svelte         # Tarjeta individual de emote
