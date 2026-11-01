@@ -1,15 +1,17 @@
 <script lang="ts">
-  import type { Emote } from '../stores/emotes';
+  import type { Emote } from '$lib/types/emote';
   import EmoteCard from './EmoteCard.svelte';
   import { createEventDispatcher } from 'svelte';
 
   export let emotes: Emote[] = [];
   const dispatch = createEventDispatcher<{ select: Emote }>();
-
-  function handleCardSelect(e: CustomEvent<Emote>) {
-    dispatch('select', e.detail);
-  }
 </script>
+
+<div class="grid">
+  {#each emotes as e (e.id)}
+    <EmoteCard {e} on:select={(ev) => dispatch('select', ev.detail)} />
+  {/each}
+</div>
 
 <style>
   .grid {
@@ -20,9 +22,3 @@
     width: 100%;
   }
 </style>
-
-<div class="grid">
-  {#each emotes as e (e.id)}
-    <EmoteCard {e} on:select={handleCardSelect} />
-  {/each}
-</div>

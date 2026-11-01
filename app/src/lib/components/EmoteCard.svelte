@@ -1,13 +1,18 @@
 <script lang="ts">
-  import type { Emote } from '../stores/emotes';
+  import type { Emote } from '$lib/types/emote';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { createEventDispatcher } from 'svelte';
+
   export let e: Emote;
-  const dispatch = createEventDispatcher();
-  function open() {
-    dispatch('select', e);
-  }
+  const dispatch = createEventDispatcher<{ select: Emote }>();
 </script>
+
+<button type="button" class="card" on:click={() => dispatch('select', e)} title={e.name}>
+  <div class="img-wrapper">
+    <img src={convertFileSrc(e.path)} alt={e.name} />
+  </div>
+  <div class="meta">{e.name}</div>
+</button>
 
 <style>
   .card {
@@ -58,10 +63,3 @@
     text-overflow: ellipsis;
   }
 </style>
-
-<button type="button" class="card" on:click={open} title={e.name}>
-  <div class="img-wrapper">
-    <img src={convertFileSrc(e.path)} alt={e.name} />
-  </div>
-  <div class="meta">{e.name}</div>
-</button>

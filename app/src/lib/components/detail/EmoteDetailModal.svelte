@@ -1,31 +1,12 @@
 <script lang="ts">
-  import type { Emote } from '../stores/emotes';
-  import { allTags } from '../stores/emotes';
-  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+  import type { Emote } from '$lib/types/emote';
+  import { api } from '$lib/services/api';
+  import { FORMAT_PRESETS, SIZE_PRESETS, formatFileSize, resolveDimensions } from '$lib/utils/format';
+  import { convertFileSrc } from '@tauri-apps/api/core';
+  import TagManager from './TagManager.svelte';
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
-
-  interface Preset {
-    label: string;
-    value: string;
-    width?: number;
-    height?: number;
-  }
-
-  // Size presets
-  const sizePresets: Preset[] = [
-    { label: 'Original', value: 'original' },
-    { label: '25x25', width: 25, height: 25, value: '25' },
-    { label: '32x32', width: 32, height: 32, value: '32' },
-    { label: '48x48', width: 48, height: 48, value: '48' },
-    { label: '64x64', width: 64, height: 64, value: '64' },
-    { label: '112x112', width: 112, height: 112, value: '112' },
-    { label: '128x128', width: 128, height: 128, value: '128' }
-  ];
-
-  // Format presets (default: webp as requested)
-  const formatPresets = ['webp', 'png', 'gif', 'jpg'];
 
   let selectedSize = '48';
   let selectedFormat = 'webp';
@@ -33,11 +14,11 @@
   let emoteName = '';
   let emoteTag = '';
   let tagList: string[] = [];
-  let tagInputText = '';
-  let showSuggestions = false;
   let copyFeedback = '';
   let copyButtonText = 'Copy to Clipboard';
-  let isSavingMeta = false;
+
+  let newFileSize: number | null = null;
+  let isCalculatingSize = false;
 
   $: if (emote) {
     emoteName = emote.name ?? '';
@@ -48,84 +29,57 @@
       .filter(Boolean);
   }
 
-  // Tags sugeridos del catálogo global que aún no tenga este emote
-  $: suggestedTags = ($allTags || [])
-    .filter((t) => !tagList.some((existing) => existing.toLowerCase() === t.toLowerCase()))
-    .filter((t) => {
-      if (!tagInputText.trim()) return true;
-      return t.toLowerCase().includes(tagInputText.trim().toLowerCase());
-    });
+  $: targetDimensions = resolveDimensions(emote, selectedSize);
 
-  async function persistTags(newTags: string[]) {
+  $: if (emote && (selectedSize || selectedFormat)) {
+    calculateNewSize();
+  }
+
+  $: sizeDiffPercent = (() => {
+    if (!emote?.file_size || !newFileSize || emote.file_size <= 0) return null;
+    return Math.round(((newFileSize - emote.file_size) / emote.file_size) * 100);
+  })();
+
+  $: resolutionDiffPercent = (() => {
+    if (!emote) return null;
+    const origArea = emote.original_width * emote.original_height;
+    const newArea = targetDimensions.width * targetDimensions.height;
+    if (origArea <= 0) return null;
+    return Math.round(((newArea - origArea) / origArea) * 100);
+  })();
+
+  function showToast(msg: string) {
+    copyFeedback = msg;
+    setTimeout(() => {
+      copyFeedback = '';
+    }, 2500);
+  }
+
+  async function persistMetadata(newName: string, newTags: string[]) {
+    if (!emote) return;
     tagList = newTags;
     emoteTag = newTags.join(', ');
-    if (emote) {
-      emote.tag = emoteTag;
-      try {
-        await invoke('update_tag', { id: emote.id, name: emoteName, tag: emoteTag });
-      } catch (e: any) {
-        showToast(`Error al guardar tag: ${e?.message || e}`);
-      }
+    emote.name = newName;
+    emote.tag = emoteTag;
+    try {
+      await api.updateTag(emote.id, newName, emoteTag);
+    } catch (e: any) {
+      showToast(`Error al guardar: ${e?.message || e}`);
     }
   }
 
-  function addTag(tagName: string) {
-    const clean = tagName.trim();
-    if (!clean) return;
-    if (tagList.some((t) => t.toLowerCase() === clean.toLowerCase())) {
-      tagInputText = '';
-      return;
-    }
-    const updated = [...tagList, clean];
-    persistTags(updated);
-    tagInputText = '';
-  }
-
-  function removeTag(tagToRemove: string) {
-    const updated = tagList.filter((t) => t !== tagToRemove);
-    persistTags(updated);
-  }
-
-  function handleTagInputKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (tagInputText.trim()) {
-        addTag(tagInputText);
-      }
-    } else if (e.key === 'Backspace' && !tagInputText && tagList.length > 0) {
-      removeTag(tagList[tagList.length - 1]);
-    } else if (e.key === 'Escape') {
-      showSuggestions = false;
+  function handleNameBlur() {
+    if (emote && emoteName.trim() !== emote.name) {
+      persistMetadata(emoteName.trim() || emote.name, tagList);
     }
   }
-
-  function formatFileSize(bytes?: number | null): string {
-    if (!bytes || bytes <= 0) return 'Desconocido';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  let newFileSize: number | null = null;
-  let isCalculatingSize = false;
-
-  function getTargetDimensions(): { width: number; height: number } {
-    if (!emote) return { width: 48, height: 48 };
-    if (selectedSize === 'original') {
-      return { width: emote.original_width, height: emote.original_height };
-    }
-    const preset = sizePresets.find((p) => p.value === selectedSize);
-    if (preset && typeof preset.width === 'number') {
-      return { width: preset.width, height: preset.height ?? preset.width };
-    }
-    return { width: emote.original_width, height: emote.original_height };
-  }
-
-  $: targetDimensions = getTargetDimensions();
 
   async function calculateNewSize() {
     if (!emote) return;
-    if (selectedSize === 'original' && selectedFormat.toLowerCase() === (emote.format ?? '').toLowerCase()) {
+    if (
+      selectedSize === 'original' &&
+      selectedFormat.toLowerCase() === (emote.format ?? '').toLowerCase()
+    ) {
       newFileSize = emote.file_size ?? null;
       return;
     }
@@ -144,13 +98,12 @@
         }
       });
 
-      const { width: targetW, height: targetH } = getTargetDimensions();
       const canvas = document.createElement('canvas');
-      canvas.width = targetW;
-      canvas.height = targetH;
+      canvas.width = targetDimensions.width;
+      canvas.height = targetDimensions.height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      ctx.drawImage(img, 0, 0, targetW, targetH);
+      ctx.drawImage(img, 0, 0, targetDimensions.width, targetDimensions.height);
 
       const mime =
         selectedFormat === 'webp'
@@ -159,42 +112,17 @@
           ? 'image/jpeg'
           : 'image/png';
 
-      canvas.toBlob((blob) => {
-        if (blob) {
-          newFileSize = blob.size;
-        }
-        isCalculatingSize = false;
-      }, mime, 0.9);
+      canvas.toBlob(
+        (blob) => {
+          if (blob) newFileSize = blob.size;
+          isCalculatingSize = false;
+        },
+        mime,
+        0.9
+      );
     } catch {
       isCalculatingSize = false;
     }
-  }
-
-  $: if (emote && (selectedSize || selectedFormat)) {
-    calculateNewSize();
-  }
-
-  $: sizeDiffPercent = (() => {
-    if (!emote?.file_size || !newFileSize || emote.file_size <= 0) return null;
-    const diff = ((newFileSize - emote.file_size) / emote.file_size) * 100;
-    return Math.round(diff);
-  })();
-
-  $: resolutionDiffPercent = (() => {
-    if (!emote) return null;
-    const { width: targetW, height: targetH } = getTargetDimensions();
-    const origArea = emote.original_width * emote.original_height;
-    const newArea = targetW * targetH;
-    if (origArea <= 0) return null;
-    const diff = ((newArea - origArea) / origArea) * 100;
-    return Math.round(diff);
-  })();
-
-  function showToast(msg: string) {
-    copyFeedback = msg;
-    setTimeout(() => {
-      copyFeedback = '';
-    }, 2500);
   }
 
   async function copyText(text: string, label: string) {
@@ -206,21 +134,13 @@
     }
   }
 
-
   async function copyImageToClipboard() {
     if (!emote) return;
     copyButtonText = 'Copiando...';
 
     try {
-      const { width: targetW, height: targetH } = getTargetDimensions();
-
-      // Invocar el comando nativo de Tauri que coloca el archivo y los bytes con su formato exacto en el portapapeles
-      await invoke('copy_to_clipboard', {
-        path: emote.path,
-        format: selectedFormat,
-        targetWidth: targetW,
-        targetHeight: targetH
-      });
+      const { width: targetW, height: targetH } = targetDimensions;
+      await api.copyToClipboard(emote.path, selectedFormat, targetW, targetH);
 
       copyButtonText = '✓ ¡Copiado!';
       showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
@@ -228,44 +148,8 @@
         copyButtonText = 'Copy to Clipboard';
       }, 2200);
     } catch (err: any) {
-      console.warn('Fallback al portapapeles del navegador tras error nativo:', err);
-      // Fallback web si el backend nativo no estuviera disponible
-      try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.src = convertFileSrc(emote.path);
-
-        await new Promise<void>((resolve, reject) => {
-          if (img.complete) resolve();
-          else {
-            img.onload = () => resolve();
-            img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
-          }
-        });
-
-        const { width: targetW, height: targetH } = getTargetDimensions();
-        const canvas = document.createElement('canvas');
-        canvas.width = targetW;
-        canvas.height = targetH;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('No se pudo inicializar canvas');
-        ctx.drawImage(img, 0, 0, targetW, targetH);
-
-        canvas.toBlob(async (blob) => {
-          if (blob) {
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            copyButtonText = '✓ ¡Copiado!';
-            showToast(`✓ Imagen copiada (${targetW}x${targetH} PNG fallback)`);
-          }
-          setTimeout(() => {
-            copyButtonText = 'Copy to Clipboard';
-          }, 2200);
-        }, 'image/png');
-      } catch (fallbackErr: any) {
-        console.error('Error al copiar al portapapeles:', fallbackErr);
-        showToast(`Error: ${fallbackErr?.message || fallbackErr}`);
-        copyButtonText = 'Copy to Clipboard';
-      }
+      showToast(`Error: ${err?.message || err}`);
+      copyButtonText = 'Copy to Clipboard';
     }
   }
 
@@ -276,8 +160,7 @@
     img.src = convertFileSrc(emote.path);
 
     img.onload = () => {
-      const { width: targetW, height: targetH } = getTargetDimensions();
-
+      const { width: targetW, height: targetH } = targetDimensions;
       const canvas = document.createElement('canvas');
       canvas.width = targetW;
       canvas.height = targetH;
@@ -301,27 +184,12 @@
     };
   }
 
-  async function saveMetadata() {
-    if (!emote || isSavingMeta) return;
-    isSavingMeta = true;
-    try {
-      await invoke('update_tag', { id: emote.id, name: emoteName, tag: emoteTag });
-      emote.name = emoteName;
-      emote.tag = emoteTag;
-      showToast('✓ Cambios guardados');
-    } catch (e: any) {
-      showToast(`Error: ${e?.message || e}`);
-    } finally {
-      isSavingMeta = false;
-    }
-  }
-
   async function handleDelete() {
     if (!emote) return;
     if (confirm(`¿Eliminar emote "${emote.name}" de forma permanente?`)) {
       try {
-        await invoke('delete_emote', { id: emote.id });
-        onClose && onClose();
+        await api.deleteEmote(emote.id);
+        onClose();
       } catch (e: any) {
         showToast(`Error: ${e?.message || e}`);
       }
@@ -344,34 +212,20 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if emote}
-  <!-- Backdrop -->
   <div class="modal-backdrop" on:click={handleBackdropClick} role="presentation">
     <div class="modal-card">
-      <!-- Header -->
       <div class="modal-header">
         <h2 class="modal-title">INFO</h2>
-        <button
-          type="button"
-          class="close-btn"
-          on:click={onClose}
-          aria-label="Cerrar modal"
-        >
+        <button type="button" class="close-btn" on:click={onClose} aria-label="Cerrar modal">
           ✕
         </button>
       </div>
 
-      <!-- Top section: Preview + Name & Link -->
       <div class="top-row">
-        <!-- Image Preview Card -->
         <div class="preview-box">
-          <img
-            src={convertFileSrc(emote.path)}
-            alt={emote.name}
-            class="preview-img"
-          />
+          <img src={convertFileSrc(emote.path)} alt={emote.name} class="preview-img" />
         </div>
 
-        <!-- Name & Link inputs with copy buttons -->
         <div class="fields-col">
           <div class="field-group">
             <span class="field-label">Name</span>
@@ -379,6 +233,7 @@
               <input
                 type="text"
                 bind:value={emoteName}
+                on:blur={handleNameBlur}
                 placeholder="Nombre del emote"
                 class="field-input"
               />
@@ -388,7 +243,6 @@
                 title="Copiar nombre"
                 on:click={() => copyText(emoteName, 'Nombre')}
               >
-                <!-- Copy icon -->
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -413,7 +267,6 @@
                 title="Copiar ruta"
                 on:click={() => copyText(emote.path, 'Ruta')}
               >
-                <!-- Copy icon -->
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -424,11 +277,10 @@
         </div>
       </div>
 
-      <!-- Size Selector -->
       <div class="options-section">
         <div class="options-label">Tamaño / Dimensiones:</div>
         <div class="pills-row">
-          {#each sizePresets as preset}
+          {#each SIZE_PRESETS as preset}
             <button
               type="button"
               class="pill-btn {selectedSize === preset.value ? 'active' : ''}"
@@ -440,11 +292,10 @@
         </div>
       </div>
 
-      <!-- Format Selector -->
       <div class="options-section">
         <div class="options-label">Formato a copiar (Default: WebP):</div>
         <div class="pills-row">
-          {#each formatPresets as fmt}
+          {#each FORMAT_PRESETS as fmt}
             <button
               type="button"
               class="pill-btn {selectedFormat === fmt ? 'active' : ''}"
@@ -456,18 +307,11 @@
         </div>
       </div>
 
-      <!-- Main Action: Yellow CTA Copy Button -->
-      <button
-        type="button"
-        class="copy-cta-btn"
-        on:click={copyImageToClipboard}
-      >
+      <button type="button" class="copy-cta-btn" on:click={copyImageToClipboard}>
         {copyButtonText}
       </button>
 
-      <!-- Metadata comparison section -->
       <div class="meta-section">
-        <!-- Resolution comparison -->
         <div class="meta-line">
           <span class="meta-key">Resolución:</span>
           <div class="meta-comparison">
@@ -485,7 +329,6 @@
           </div>
         </div>
 
-        <!-- File size comparison -->
         <div class="meta-line">
           <span class="meta-key">Peso:</span>
           <div class="meta-comparison">
@@ -509,7 +352,6 @@
           </div>
         </div>
 
-        <!-- Format comparison -->
         <div class="meta-line">
           <span class="meta-key">Type:</span>
           <div class="meta-comparison">
@@ -524,103 +366,20 @@
         </div>
       </div>
 
-      <!-- Tags Section: Modern Tag Manager with Global Autocomplete -->
-      <div class="tags-section">
-        <div class="section-header-row">
-          <h3 class="section-title">TAGS</h3>
-          <span class="tags-counter">{tagList.length} {tagList.length === 1 ? 'tag' : 'tags'}</span>
-        </div>
+      <TagManager
+        {tagList}
+        onChange={(newTags) => persistMetadata(emoteName, newTags)}
+      />
 
-        <div class="tag-manager-wrapper">
-          <!-- Tag input box with embedded pills like the reference -->
-          <div
-            class="tag-box-container"
-            on:click={() => {
-              const el = document.getElementById('tag-inline-input');
-              if (el) el.focus();
-            }}
-            role="presentation"
-          >
-            {#each tagList as t}
-              <span class="tag-badge">
-                <span class="tag-badge-text">{t}</span>
-                <button
-                  type="button"
-                  class="tag-badge-remove"
-                  title="Eliminar tag"
-                  on:click|stopPropagation={() => removeTag(t)}
-                >
-                  ✕
-                </button>
-              </span>
-            {/each}
-
-            <input
-              id="tag-inline-input"
-              type="text"
-              class="tag-inline-input"
-              placeholder={tagList.length === 0 ? "Escribe o busca un tag..." : "Agregar tag..."}
-              bind:value={tagInputText}
-              on:focus={() => (showSuggestions = true)}
-              on:keydown={handleTagInputKeydown}
-            />
-          </div>
-
-          <!-- Suggestions Dropdown (Global Tags) -->
-          {#if showSuggestions && suggestedTags.length > 0}
-            <!-- Backdrop to close dropdown on outer click -->
-            <div
-              class="dropdown-backdrop"
-              on:click|stopPropagation={() => (showSuggestions = false)}
-              role="presentation"
-            ></div>
-
-            <div class="tag-dropdown">
-              <div class="tag-dropdown-header">
-                <span class="dropdown-header-title">🏷️ Tags globales existentes</span>
-                <span class="dropdown-header-count">{suggestedTags.length} disponibles</span>
-              </div>
-              <div class="tag-dropdown-list">
-                {#each suggestedTags as st}
-                  <button
-                    type="button"
-                    class="tag-dropdown-item"
-                    on:click|stopPropagation={() => {
-                      addTag(st);
-                      // Mantener foco en el input
-                      const el = document.getElementById('tag-inline-input');
-                      if (el) el.focus();
-                    }}
-                  >
-                    <span class="tag-item-name">{st}</span>
-                    <span class="tag-item-action">+ Agregar</span>
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Footer extra actions -->
       <div class="modal-footer">
-        <button
-          type="button"
-          class="secondary-action-btn"
-          on:click={downloadResizedImage}
-        >
+        <button type="button" class="secondary-action-btn" on:click={downloadResizedImage}>
           💾 Descargar copia
         </button>
-        <button
-          type="button"
-          class="danger-action-btn"
-          on:click={handleDelete}
-        >
+        <button type="button" class="danger-action-btn" on:click={handleDelete}>
           🗑️ Eliminar
         </button>
       </div>
 
-      <!-- Floating toast message -->
       {#if copyFeedback}
         <div class="toast-popup">{copyFeedback}</div>
       {/if}
@@ -644,12 +403,14 @@
     padding: 16px;
     animation: fadeIn 0.15s ease-out;
   }
-
   @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
-
   .modal-card {
     background: #1e1e20;
     color: #f3f4f6;
@@ -665,8 +426,6 @@
     max-height: 90vh;
     overflow-y: auto;
   }
-
-  /* Header */
   .modal-header {
     display: flex;
     align-items: center;
@@ -694,8 +453,6 @@
     transform: scale(1.15) rotate(90deg);
     color: #fef08a;
   }
-
-  /* Top Row */
   .top-row {
     display: flex;
     gap: 16px;
@@ -779,8 +536,6 @@
     color: #ffffff;
     background: rgba(255, 255, 255, 0.08);
   }
-
-  /* Options Section (Size & Format) */
   .options-section {
     display: flex;
     flex-direction: column;
@@ -818,8 +573,6 @@
     color: #ffffff;
     box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
   }
-
-  /* Main Action Button (Yellow CTA) */
   .copy-cta-btn {
     background: #facc15;
     color: #111827;
@@ -840,8 +593,6 @@
   .copy-cta-btn:active {
     transform: scale(0.98);
   }
-
-  /* Metadata */
   .meta-section {
     display: flex;
     flex-direction: column;
@@ -910,191 +661,6 @@
     background: rgba(156, 163, 175, 0.15);
     color: #9ca3af;
   }
-
-  /* Tags */
-  .tags-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    text-align: left;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    padding-top: 12px;
-    position: relative;
-  }
-  .section-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .section-title {
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: #9ca3af;
-    margin: 0;
-  }
-  .tags-counter {
-    font-size: 11px;
-    font-weight: 600;
-    color: #6b7280;
-  }
-  .tag-manager-wrapper {
-    position: relative;
-    width: 100%;
-  }
-  .tag-box-container {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    background: #2b2b2f;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 6px 10px;
-    min-height: 42px;
-    cursor: text;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-  .tag-box-container:focus-within {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
-  }
-  .tag-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: rgba(99, 102, 241, 0.18);
-    border: 1px solid rgba(99, 102, 241, 0.4);
-    color: #c7d2fe;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 6px;
-    animation: tagAppear 0.12s ease-out;
-  }
-  @keyframes tagAppear {
-    from {
-      opacity: 0;
-      transform: scale(0.92);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  .tag-badge-text {
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  .tag-badge-remove {
-    background: transparent;
-    border: none;
-    color: #a5b4fc;
-    font-size: 11px;
-    line-height: 1;
-    padding: 0 1px;
-    cursor: pointer;
-    border-radius: 3px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s, color 0.15s;
-  }
-  .tag-badge-remove:hover {
-    background: rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
-  }
-  .tag-inline-input {
-    flex: 1;
-    min-width: 100px;
-    background: transparent;
-    border: none;
-    color: #f3f4f6;
-    font-size: 13px;
-    outline: none;
-    padding: 4px 2px;
-  }
-  .tag-inline-input::placeholder {
-    color: #6b7280;
-  }
-
-  /* Dropdown & Backdrop */
-  .dropdown-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1050;
-  }
-  .tag-dropdown {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    right: 0;
-    background: #232326;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
-    z-index: 1100;
-    max-height: 200px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    animation: fadeIn 0.12s ease-out;
-  }
-  .tag-dropdown-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    font-size: 11px;
-    color: #9ca3af;
-    font-weight: 600;
-  }
-  .dropdown-header-count {
-    color: #6b7280;
-    font-size: 10px;
-  }
-  .tag-dropdown-list {
-    overflow-y: auto;
-    max-height: 160px;
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .tag-dropdown-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 7px 10px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: #e5e7eb;
-    font-size: 13px;
-    cursor: pointer;
-    text-align: left;
-    transition: background 0.12s ease;
-  }
-  .tag-dropdown-item:hover {
-    background: rgba(99, 102, 241, 0.18);
-    color: #ffffff;
-  }
-  .tag-item-name {
-    font-weight: 500;
-  }
-  .tag-item-action {
-    font-size: 11px;
-    color: #818cf8;
-    font-weight: 600;
-  }
-
-  /* Footer Actions */
   .modal-footer {
     display: flex;
     justify-content: space-between;
@@ -1133,8 +699,6 @@
     background: rgba(239, 68, 68, 0.15);
     color: #ef4444;
   }
-
-  /* Toast */
   .toast-popup {
     position: absolute;
     bottom: 20px;
@@ -1160,3 +724,4 @@
     }
   }
 </style>
+

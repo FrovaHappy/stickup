@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { loadEmotes } from '../stores/emotes';
+  import { api } from '$lib/services/api';
+  import { loadEmotes } from '$lib/stores/emotes';
 
   let importing = false;
   let statusMsg = '';
@@ -22,13 +22,13 @@
       if (!folderPath) return;
 
       importing = true;
-      statusMsg = 'Importando y convirtiendo imágenes a WebP...';
+      statusMsg = 'Importando imágenes...';
 
-      const imported = await invoke<any[]>('import_folder', { folderPath });
+      const imported = await api.importFolder(folderPath);
       await loadEmotes();
 
       if (imported && imported.length > 0) {
-        statusMsg = `¡${imported.length} emote(s) importados y convertidos a WebP exitosamente!`;
+        statusMsg = `¡${imported.length} emote(s) importados exitosamente!`;
       } else {
         statusMsg = 'No se encontraron imágenes compatibles (.png, .jpg, .gif, .webp) en la carpeta.';
       }
@@ -44,6 +44,15 @@
     }
   }
 </script>
+
+<div class="import-container">
+  <button type="button" class="import-btn" on:click={pickFolderAndImport} disabled={importing}>
+    {importing ? 'Importando...' : '📁 Importar Carpeta'}
+  </button>
+  {#if statusMsg}
+    <div class="status-text">{statusMsg}</div>
+  {/if}
+</div>
 
 <style>
   .import-container {
@@ -84,12 +93,3 @@
     }
   }
 </style>
-
-<div class="import-container">
-  <button type="button" class="import-btn" on:click={pickFolderAndImport} disabled={importing}>
-    {importing ? 'Importando a WebP...' : '📁 Importar Carpeta'}
-  </button>
-  {#if statusMsg}
-    <div class="status-text">{statusMsg}</div>
-  {/if}
-</div>

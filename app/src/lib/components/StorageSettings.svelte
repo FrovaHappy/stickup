@@ -1,15 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
+  import { api } from '$lib/services/api';
 
   let storagePath = '';
-  let isEditing = false;
   let message = '';
 
   onMount(async () => {
     try {
-      storagePath = await invoke<string>('get_storage_path');
+      storagePath = await api.getStoragePath();
     } catch (e) {
       console.error('Error al obtener la ruta de almacenamiento:', e);
     }
@@ -27,7 +26,7 @@
 
       const newPath = Array.isArray(selected) ? selected[0] : selected;
       if (newPath) {
-        storagePath = await invoke<string>('set_storage_path', { path: newPath });
+        storagePath = await api.setStoragePath(newPath);
         message = '✓ Ruta de almacenamiento actualizada';
         setTimeout(() => {
           message = '';
@@ -39,6 +38,19 @@
     }
   }
 </script>
+
+<div class="storage-box">
+  <div class="info-row">
+    <span class="path-label">💾 Guardar emotes en:</span>
+    <span class="path-val" title={storagePath}>{storagePath || 'Cargando...'}</span>
+    <button type="button" class="change-btn" on:click={changeStoragePath}>
+      ✏️ Cambiar ruta
+    </button>
+  </div>
+  {#if message}
+    <div class="msg">{message}</div>
+  {/if}
+</div>
 
 <style>
   .storage-box {
@@ -124,16 +136,3 @@
     color: #059669;
   }
 </style>
-
-<div class="storage-box">
-  <div class="info-row">
-    <span class="path-label">💾 Guardar emotes en:</span>
-    <span class="path-val" title={storagePath}>{storagePath || 'Cargando...'}</span>
-    <button type="button" class="change-btn" on:click={changeStoragePath}>
-      ✏️ Cambiar ruta
-    </button>
-  </div>
-  {#if message}
-    <div class="msg">{message}</div>
-  {/if}
-</div>
