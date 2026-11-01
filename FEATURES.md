@@ -45,6 +45,11 @@
 
 - [x] **Ruta de almacenamiento configurable**: Selector de carpeta personalizada para guardar la biblioteca de emotes.
 - [x] **Eliminación sincronizada**: Al borrar un emote, se elimina de la base de datos y se suprime físicamente del disco.
+- [x] **Resincronización y optimización del directorio**: Escanea la carpeta activa de emotes, filtra imágenes `PNG`/`JPG`, las convierte a `.webp` eliminando el archivo original, indexa archivos nuevos, limpia registros huérfanos de la base de datos y muestra estadísticas detalladas (archivos escaneados, convertidos y espacio ahorrado).
+- [x] **Indicadores visuales y Estadísticas de Uso**:
+  - [x] **Insignia de Nuevo (🍃)**: Basada automáticamente en la fecha de creación (`created_at` dentro de las últimas 24 horas).
+  - [x] **Insignia Top 20 (🔥)**: Destaca con un icono de fuego a los 20 emotes con mayor cantidad de copias e interacciones.
+  - [x] **Contadores persistentes**: Registro en SQLite de veces copiado (`copy_count`), interacciones (`interaction_count`) y última fecha de uso (`last_used_at`).
 
 ---
 

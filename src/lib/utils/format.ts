@@ -1,4 +1,5 @@
 import type { Emote, SizePreset } from '$lib/types/emote';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 export const SIZE_PRESETS: SizePreset[] = [
   { label: 'Original', value: 'original' },
@@ -11,6 +12,44 @@ export const SIZE_PRESETS: SizePreset[] = [
 ];
 
 export const FORMAT_PRESETS = ['webp', 'png', 'gif', 'jpg'] as const;
+
+export function getMimeType(format: string): string {
+  switch (format.toLowerCase()) {
+    case 'webp':
+      return 'image/webp';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    default:
+      return 'image/png';
+  }
+}
+
+export async function renderEmoteToCanvas(
+  path: string,
+  width: number,
+  height: number
+): Promise<HTMLCanvasElement> {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = convertFileSrc(path);
+
+  await new Promise<void>((resolve, reject) => {
+    if (img.complete) resolve();
+    else {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+    }
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No se pudo inicializar canvas');
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas;
+}
 
 export function formatFileSize(bytes?: number | null): string {
   if (!bytes || bytes <= 0) return 'Desconocido';
@@ -33,4 +72,3 @@ export function resolveDimensions(
   }
   return { width: emote.original_width, height: emote.original_height };
 }
-

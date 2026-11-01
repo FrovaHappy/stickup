@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Emote } from '$lib/types/emote';
+import type { Emote, ResyncStats } from '$lib/types/emote';
 
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
@@ -9,7 +9,13 @@ export const api = {
   deleteEmote: (id: number) => invoke<boolean>('delete_emote', { id }),
   updateTag: (id: number, name: string, tag: string) =>
     invoke<boolean>('update_tag', { id, name, tag }),
-  copyToClipboard: (path: string, format: string, targetWidth: number, targetHeight: number) =>
-    invoke<boolean>('copy_to_clipboard', { path, format, targetWidth, targetHeight })
+  copyToClipboard: (
+    id: number,
+    path: string,
+    format: string,
+    targetWidth: number,
+    targetHeight: number
+  ) => invoke<boolean>('copy_to_clipboard', { id, path, format, targetWidth, targetHeight }),
+  recordInteraction: (id: number) => invoke<boolean>('record_interaction', { id }),
+  resyncEmotes: () => invoke<ResyncStats>('resync_emotes')
 };
-

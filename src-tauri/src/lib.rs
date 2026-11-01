@@ -14,7 +14,9 @@ pub fn run() {
             commands::set_storage_path,
             commands::delete_emote,
             commands::update_tag,
-            commands::copy_to_clipboard
+            commands::copy_to_clipboard,
+            commands::record_interaction,
+            commands::resync_emotes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

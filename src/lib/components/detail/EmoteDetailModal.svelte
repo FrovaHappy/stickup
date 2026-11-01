@@ -1,7 +1,16 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Emote } from '$lib/types/emote';
   import { api } from '$lib/services/api';
-  import { FORMAT_PRESETS, SIZE_PRESETS, formatFileSize, resolveDimensions } from '$lib/utils/format';
+  import { loadEmotes, topHotEmoteIds, isEmoteNewByDate } from '$lib/stores/emotes';
+  import {
+    FORMAT_PRESETS,
+    SIZE_PRESETS,
+    formatFileSize,
+    getMimeType,
+    renderEmoteToCanvas,
+    resolveDimensions
+  } from '$lib/utils/format';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import TagManager from './TagManager.svelte';
 
@@ -12,22 +21,41 @@
   let selectedFormat = 'webp';
 
   let emoteName = '';
-  let emoteTag = '';
   let tagList: string[] = [];
   let copyFeedback = '';
   let copyButtonText = 'Copy to Clipboard';
+  let copyCount = 0;
+  let interactionCount = 0;
 
   let newFileSize: number | null = null;
   let isCalculatingSize = false;
 
+  onMount(async () => {
+    if (emote) {
+      copyCount = emote.copy_count ?? 0;
+      interactionCount = (emote.interaction_count ?? 0) + 1;
+      emote.interaction_count = interactionCount;
+      try {
+        await api.recordInteraction(emote.id);
+        loadEmotes();
+      } catch {
+        // Ignorar errores silenciosos de telemetría local
+      }
+    }
+  });
+
   $: if (emote) {
     emoteName = emote.name ?? '';
-    emoteTag = emote.tag ?? '';
+    copyCount = emote.copy_count ?? 0;
+    interactionCount = emote.interaction_count ?? 0;
     tagList = (emote.tag ?? '')
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
   }
+
+  $: isHot = emote ? $topHotEmoteIds.has(emote.id) : false;
+  $: isNew = emote ? isEmoteNewByDate(emote.created_at) : false;
 
   $: targetDimensions = resolveDimensions(emote, selectedSize);
 
@@ -58,11 +86,11 @@
   async function persistMetadata(newName: string, newTags: string[]) {
     if (!emote) return;
     tagList = newTags;
-    emoteTag = newTags.join(', ');
+    const joinedTags = newTags.join(', ');
     emote.name = newName;
-    emote.tag = emoteTag;
+    emote.tag = joinedTags;
     try {
-      await api.updateTag(emote.id, newName, emoteTag);
+      await api.updateTag(emote.id, newName, joinedTags);
     } catch (e: any) {
       showToast(`Error al guardar: ${e?.message || e}`);
     }
@@ -86,38 +114,17 @@
 
     isCalculatingSize = true;
     try {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = convertFileSrc(emote.path);
-
-      await new Promise<void>((resolve, reject) => {
-        if (img.complete) resolve();
-        else {
-          img.onload = () => resolve();
-          img.onerror = () => reject();
-        }
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = targetDimensions.width;
-      canvas.height = targetDimensions.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0, targetDimensions.width, targetDimensions.height);
-
-      const mime =
-        selectedFormat === 'webp'
-          ? 'image/webp'
-          : selectedFormat === 'jpg'
-          ? 'image/jpeg'
-          : 'image/png';
-
+      const canvas = await renderEmoteToCanvas(
+        emote.path,
+        targetDimensions.width,
+        targetDimensions.height
+      );
       canvas.toBlob(
         (blob) => {
           if (blob) newFileSize = blob.size;
           isCalculatingSize = false;
         },
-        mime,
+        getMimeType(selectedFormat),
         0.9
       );
     } catch {
@@ -140,7 +147,13 @@
 
     try {
       const { width: targetW, height: targetH } = targetDimensions;
-      await api.copyToClipboard(emote.path, selectedFormat, targetW, targetH);
+      await api.copyToClipboard(emote.id, emote.path, selectedFormat, targetW, targetH);
+
+      copyCount += 1;
+      interactionCount += 1;
+      emote.copy_count = copyCount;
+      emote.interaction_count = interactionCount;
+      loadEmotes();
 
       copyButtonText = '✓ ¡Copiado!';
       showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
@@ -153,35 +166,21 @@
     }
   }
 
-  function downloadResizedImage() {
+  async function downloadResizedImage() {
     if (!emote) return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = convertFileSrc(emote.path);
-
-    img.onload = () => {
+    try {
       const { width: targetW, height: targetH } = targetDimensions;
-      const canvas = document.createElement('canvas');
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0, targetW, targetH);
-
-      const mime =
-        selectedFormat === 'webp'
-          ? 'image/webp'
-          : selectedFormat === 'jpg'
-          ? 'image/jpeg'
-          : 'image/png';
-      const dataUrl = canvas.toDataURL(mime, 0.95);
+      const canvas = await renderEmoteToCanvas(emote.path, targetW, targetH);
+      const dataUrl = canvas.toDataURL(getMimeType(selectedFormat), 0.95);
 
       const a = document.createElement('a');
       a.href = dataUrl;
       a.download = `${emoteName || emote.name}_${targetW}x${targetH}.${selectedFormat}`;
       a.click();
       showToast('✓ Imagen descargada');
-    };
+    } catch (e: any) {
+      showToast(`Error al descargar: ${e?.message || e}`);
+    }
   }
 
   async function handleDelete() {
@@ -362,6 +361,27 @@
             {:else}
               <span class="meta-value bold">{selectedFormat.toUpperCase()}</span>
             {/if}
+          </div>
+        </div>
+
+        <div class="meta-line">
+          <span class="meta-key">Estadísticas:</span>
+          <div class="meta-comparison">
+            <span class="diff-badge blue">📋 {copyCount} {copyCount === 1 ? 'copia' : 'copias'}</span>
+            <span class="diff-badge gray">👆 {interactionCount} {interactionCount === 1 ? 'interacción' : 'interacciones'}</span>
+            {#if isHot}
+              <span class="diff-badge amber">🔥 Top 20</span>
+            {/if}
+            {#if isNew}
+              <span class="diff-badge green">🍃 Nuevo</span>
+            {/if}
+          </div>
+        </div>
+
+        <div class="meta-line">
+          <span class="meta-key">Creado:</span>
+          <div class="meta-comparison">
+            <span class="meta-value">{new Date(emote.created_at).toLocaleString()}</span>
           </div>
         </div>
       </div>

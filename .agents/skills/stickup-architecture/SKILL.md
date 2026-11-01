@@ -27,12 +27,12 @@ Esta skill define las reglas arquitectónicas, la estructura de directorios y lo
 
 ## 2. Estructura de Ficheros Estándar
 
-### Backend (`app/src-tauri/src/`)
+### Backend (`src-tauri/src/`)
 ```text
-app/src-tauri/src/
+src-tauri/src/
 ├── main.rs              # Punto de entrada mínimo (invoca app_lib::run)
 ├── lib.rs               # Registro del Builder de Tauri y declaración de módulos
-├── models.rs            # Estructuras de datos serializables (Emote)
+├── models.rs            # Estructuras de datos serializables (Emote, ResyncStats)
 ├── db.rs                # Conexión SQLite, migración de tablas y rutas de almacenamiento
 ├── commands.rs          # Comandos #[tauri::command] expuestos al frontend
 └── clipboard/           # Subsistema multiplataforma de portapapeles e imagen
@@ -42,16 +42,16 @@ app/src-tauri/src/
     └── android.rs       # Stub / Adaptador Android
 ```
 
-### Frontend (`app/src/`)
+### Frontend (`src/`)
 ```text
-app/src/
+src/
 ├── app.html
 ├── routes/
 │   ├── +layout.ts
 │   └── +page.svelte                 # Vista principal limpia
 └── lib/
     ├── types/
-    │   └── emote.ts                 # Interfaces TypeScript (Emote, Preset)
+    │   └── emote.ts                 # Interfaces TypeScript (Emote, SizePreset, ResyncStats)
     ├── services/
     │   └── api.ts                   # Wrapper tipado para invocaciones Tauri (invoke)
     ├── stores/
@@ -60,7 +60,7 @@ app/src/
     │   └── format.ts                # Utilidades puras (formatFileSize, cálculo de dimensiones)
     └── components/
         ├── StorageSettings.svelte   # Selector de ruta de guardado
-        ├── ImportButton.svelte      # Botón de importación de carpeta a WebP/GIF
+        ├── ImportButton.svelte      # Botones de importación y resincronización con estadísticas
         ├── EmoteGrid.svelte         # Cuadrícula de emotes
         ├── EmoteCard.svelte         # Tarjeta individual de emote
         └── detail/                  # Subcomponentes del modal de detalle
