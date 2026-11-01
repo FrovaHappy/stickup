@@ -1,8 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type { Emote } from '$lib/types/emote';
-  import { api } from '$lib/services/api';
-  import { loadEmotes, topHotEmoteIds, isEmoteNewByDate } from '$lib/stores/emotes';
+  import { onMount } from "svelte";
+  import type { Emote } from "$lib/types/emote";
+  import { api } from "$lib/services/api";
+  import {
+    loadEmotes,
+    topHotEmoteIds,
+    isEmoteNewByDate,
+  } from "$lib/stores/emotes";
   import {
     SIZE_PRESETS,
     formatFileSize,
@@ -10,21 +14,21 @@
     getMimeType,
     isAnimatedEmote,
     renderEmoteToCanvas,
-    resolveDimensions
-  } from '$lib/utils/format';
-  import { convertFileSrc } from '@tauri-apps/api/core';
-  import TagManager from './TagManager.svelte';
+    resolveDimensions,
+  } from "$lib/utils/format";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import TagManager from "./TagManager.svelte";
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
 
-  let selectedSize = '48';
-  let selectedFormat = 'webp';
+  let selectedSize = "original";
+  let selectedFormat = "webp";
 
-  let emoteName = '';
+  let emoteName = "";
   let tagList: string[] = [];
-  let copyFeedback = '';
-  let copyButtonText = 'Copy to Clipboard';
+  let copyFeedback = "";
+  let copyButtonText = "Copy to Clipboard";
   let copyCount = 0;
   let interactionCount = 0;
 
@@ -46,11 +50,11 @@
   });
 
   $: if (emote) {
-    emoteName = emote.name ?? '';
+    emoteName = emote.name ?? "";
     copyCount = emote.copy_count ?? 0;
     interactionCount = emote.interaction_count ?? 0;
-    tagList = (emote.tag ?? '')
-      .split(',')
+    tagList = (emote.tag ?? "")
+      .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
   }
@@ -58,7 +62,7 @@
   $: isAnimated = isAnimatedEmote(emote);
   $: availableFormats = getAvailableFormats(emote);
   $: if (emote && !availableFormats.includes(selectedFormat)) {
-    selectedFormat = isAnimated ? 'gif' : 'webp';
+    selectedFormat = isAnimated ? "gif" : "webp";
   }
 
   $: isHot = emote ? $topHotEmoteIds.has(emote.id) : false;
@@ -72,7 +76,9 @@
 
   $: sizeDiffPercent = (() => {
     if (!emote?.file_size || !newFileSize || emote.file_size <= 0) return null;
-    return Math.round(((newFileSize - emote.file_size) / emote.file_size) * 100);
+    return Math.round(
+      ((newFileSize - emote.file_size) / emote.file_size) * 100,
+    );
   })();
 
   $: resolutionDiffPercent = (() => {
@@ -86,14 +92,14 @@
   function showToast(msg: string) {
     copyFeedback = msg;
     setTimeout(() => {
-      copyFeedback = '';
+      copyFeedback = "";
     }, 2500);
   }
 
   async function persistMetadata(newName: string, newTags: string[]) {
     if (!emote) return;
     tagList = newTags;
-    const joinedTags = newTags.join(', ');
+    const joinedTags = newTags.join(", ");
     emote.name = newName;
     emote.tag = joinedTags;
     try {
@@ -112,8 +118,8 @@
   async function calculateNewSize() {
     if (!emote) return;
     if (
-      selectedSize === 'original' &&
-      selectedFormat.toLowerCase() === (emote.format ?? '').toLowerCase()
+      selectedSize === "original" &&
+      selectedFormat.toLowerCase() === (emote.format ?? "").toLowerCase()
     ) {
       newFileSize = emote.file_size ?? null;
       return;
@@ -124,7 +130,7 @@
       const canvas = await renderEmoteToCanvas(
         emote.path,
         targetDimensions.width,
-        targetDimensions.height
+        targetDimensions.height,
       );
       canvas.toBlob(
         (blob) => {
@@ -132,7 +138,7 @@
           isCalculatingSize = false;
         },
         getMimeType(selectedFormat),
-        0.9
+        0.9,
       );
     } catch {
       isCalculatingSize = false;
@@ -144,17 +150,23 @@
       await navigator.clipboard.writeText(text);
       showToast(`¡${label} copiado!`);
     } catch {
-      showToast('Error al copiar texto');
+      showToast("Error al copiar texto");
     }
   }
 
   async function copyImageToClipboard() {
     if (!emote) return;
-    copyButtonText = 'Copiando...';
+    copyButtonText = "Copiando...";
 
     try {
       const { width: targetW, height: targetH } = targetDimensions;
-      await api.copyToClipboard(emote.id, emote.path, selectedFormat, targetW, targetH);
+      await api.copyToClipboard(
+        emote.id,
+        emote.path,
+        selectedFormat,
+        targetW,
+        targetH,
+      );
 
       copyCount += 1;
       interactionCount += 1;
@@ -162,14 +174,16 @@
       emote.interaction_count = interactionCount;
       loadEmotes();
 
-      copyButtonText = '✓ ¡Copiado!';
-      showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
+      copyButtonText = "✓ ¡Copiado!";
+      showToast(
+        `✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`,
+      );
       setTimeout(() => {
-        copyButtonText = 'Copy to Clipboard';
+        copyButtonText = "Copy to Clipboard";
       }, 2200);
     } catch (err: any) {
       showToast(`Error: ${err?.message || err}`);
-      copyButtonText = 'Copy to Clipboard';
+      copyButtonText = "Copy to Clipboard";
     }
   }
 
@@ -180,11 +194,11 @@
       const canvas = await renderEmoteToCanvas(emote.path, targetW, targetH);
       const dataUrl = canvas.toDataURL(getMimeType(selectedFormat), 0.95);
 
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `${emoteName || emote.name}_${targetW}x${targetH}.${selectedFormat}`;
       a.click();
-      showToast('✓ Imagen descargada');
+      showToast("✓ Imagen descargada");
     } catch (e: any) {
       showToast(`Error al descargar: ${e?.message || e}`);
     }
@@ -209,7 +223,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       onClose();
     }
   }
@@ -218,18 +232,31 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if emote}
-  <div class="modal-backdrop" on:click={handleBackdropClick} role="presentation">
+  <div
+    class="modal-backdrop"
+    on:click={handleBackdropClick}
+    role="presentation"
+  >
     <div class="modal-card">
       <div class="modal-header">
         <h2 class="modal-title">INFO</h2>
-        <button type="button" class="close-btn" on:click={onClose} aria-label="Cerrar modal">
+        <button
+          type="button"
+          class="close-btn"
+          on:click={onClose}
+          aria-label="Cerrar modal"
+        >
           ✕
         </button>
       </div>
 
       <div class="top-row">
         <div class="preview-box">
-          <img src={convertFileSrc(emote.path)} alt={emote.name} class="preview-img" />
+          <img
+            src={convertFileSrc(emote.path)}
+            alt={emote.name}
+            class="preview-img"
+          />
         </div>
 
         <div class="fields-col">
@@ -247,11 +274,20 @@
                 type="button"
                 class="copy-icon-btn"
                 title="Copiar nombre"
-                on:click={() => copyText(emoteName, 'Nombre')}
+                on:click={() => copyText(emoteName, "Nombre")}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  <path
+                    d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                  ></path>
                 </svg>
               </button>
             </div>
@@ -271,11 +307,20 @@
                 type="button"
                 class="copy-icon-btn"
                 title="Copiar ruta"
-                on:click={() => copyText(emote.path, 'Ruta')}
+                on:click={() => copyText(emote.path, "Ruta")}
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  <path
+                    d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                  ></path>
                 </svg>
               </button>
             </div>
@@ -299,7 +344,9 @@
       </div>
 
       <div class="options-section">
-        <div class="options-label">Formato a copiar (Default: {isAnimated ? 'GIF' : 'WebP'}):</div>
+        <div class="options-label">
+          Formato a copiar (Default: {isAnimated ? "GIF" : "WebP"}):
+        </div>
         <div class="pills-row">
           {#each availableFormats as fmt}
             <button
@@ -313,7 +360,11 @@
         </div>
       </div>
 
-      <button type="button" class="copy-cta-btn" on:click={copyImageToClipboard}>
+      <button
+        type="button"
+        class="copy-cta-btn"
+        on:click={copyImageToClipboard}
+      >
         {copyButtonText}
       </button>
 
@@ -321,13 +372,19 @@
         <div class="meta-line">
           <span class="meta-key">Resolución:</span>
           <div class="meta-comparison">
-            {#if selectedSize === 'original' || (emote.original_width === targetDimensions.width && emote.original_height === targetDimensions.height)}
-              <span class="meta-value bold">{emote.original_width}×{emote.original_height} px</span>
+            {#if selectedSize === "original" || (emote.original_width === targetDimensions.width && emote.original_height === targetDimensions.height)}
+              <span class="meta-value bold"
+                >{emote.original_width}×{emote.original_height} px</span
+              >
               <span class="diff-badge gray">Original</span>
             {:else}
-              <span class="meta-value muted">{emote.original_width}×{emote.original_height} px</span>
+              <span class="meta-value muted"
+                >{emote.original_width}×{emote.original_height} px</span
+              >
               <span class="arrow-sep">➜</span>
-              <span class="meta-value bold highlight">{targetDimensions.width}×{targetDimensions.height} px</span>
+              <span class="meta-value bold highlight"
+                >{targetDimensions.width}×{targetDimensions.height} px</span
+              >
               {#if resolutionDiffPercent !== null}
                 <span class="diff-badge blue">{resolutionDiffPercent}% px</span>
               {/if}
@@ -341,17 +398,27 @@
             {#if isCalculatingSize}
               <span class="meta-value muted">Calculando...</span>
             {:else if newFileSize !== null && emote.file_size && emote.file_size !== newFileSize}
-              <span class="meta-value muted">{formatFileSize(emote.file_size)}</span>
+              <span class="meta-value muted"
+                >{formatFileSize(emote.file_size)}</span
+              >
               <span class="arrow-sep">➜</span>
-              <span class="meta-value bold highlight">{formatFileSize(newFileSize)}</span>
+              <span class="meta-value bold highlight"
+                >{formatFileSize(newFileSize)}</span
+              >
               {#if sizeDiffPercent !== null}
-                <span class="diff-badge {sizeDiffPercent < 0 ? 'green' : 'amber'}">
-                  {sizeDiffPercent < 0 ? `-${Math.abs(sizeDiffPercent)}%` : `+${sizeDiffPercent}%`}
+                <span
+                  class="diff-badge {sizeDiffPercent < 0 ? 'green' : 'amber'}"
+                >
+                  {sizeDiffPercent < 0
+                    ? `-${Math.abs(sizeDiffPercent)}%`
+                    : `+${sizeDiffPercent}%`}
                 </span>
               {/if}
             {:else}
-              <span class="meta-value bold">{formatFileSize(newFileSize ?? emote.file_size)}</span>
-              {#if selectedSize === 'original'}
+              <span class="meta-value bold"
+                >{formatFileSize(newFileSize ?? emote.file_size)}</span
+              >
+              {#if selectedSize === "original"}
                 <span class="diff-badge gray">Original</span>
               {/if}
             {/if}
@@ -364,9 +431,12 @@
             {#if emote.format && selectedFormat.toUpperCase() !== emote.format.toUpperCase()}
               <span class="meta-value muted">{emote.format.toUpperCase()}</span>
               <span class="arrow-sep">➜</span>
-              <span class="meta-value bold highlight">{selectedFormat.toUpperCase()}</span>
+              <span class="meta-value bold highlight"
+                >{selectedFormat.toUpperCase()}</span
+              >
             {:else}
-              <span class="meta-value bold">{selectedFormat.toUpperCase()}</span>
+              <span class="meta-value bold">{selectedFormat.toUpperCase()}</span
+              >
             {/if}
           </div>
         </div>
@@ -374,8 +444,13 @@
         <div class="meta-line">
           <span class="meta-key">Estadísticas:</span>
           <div class="meta-comparison">
-            <span class="diff-badge blue">📋 {copyCount} {copyCount === 1 ? 'copia' : 'copias'}</span>
-            <span class="diff-badge gray">👆 {interactionCount} {interactionCount === 1 ? 'interacción' : 'interacciones'}</span>
+            <span class="diff-badge blue"
+              >📋 {copyCount} {copyCount === 1 ? "copia" : "copias"}</span
+            >
+            <span class="diff-badge gray"
+              >👆 {interactionCount}
+              {interactionCount === 1 ? "interacción" : "interacciones"}</span
+            >
             {#if isHot}
               <span class="diff-badge amber">🔥 Top 20</span>
             {/if}
@@ -388,7 +463,9 @@
         <div class="meta-line">
           <span class="meta-key">Creado:</span>
           <div class="meta-comparison">
-            <span class="meta-value">{new Date(emote.created_at).toLocaleString()}</span>
+            <span class="meta-value"
+              >{new Date(emote.created_at).toLocaleString()}</span
+            >
           </div>
         </div>
       </div>
@@ -399,7 +476,11 @@
       />
 
       <div class="modal-footer">
-        <button type="button" class="secondary-action-btn" on:click={downloadResizedImage}>
+        <button
+          type="button"
+          class="secondary-action-btn"
+          on:click={downloadResizedImage}
+        >
           💾 Descargar copia
         </button>
         <button type="button" class="danger-action-btn" on:click={handleDelete}>
@@ -445,7 +526,9 @@
     width: 100%;
     max-width: 440px;
     padding: 24px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 20px 40px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(255, 255, 255, 0.08);
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -474,7 +557,9 @@
     cursor: pointer;
     line-height: 1;
     padding: 4px;
-    transition: transform 0.15s ease, color 0.15s ease;
+    transition:
+      transform 0.15s ease,
+      color 0.15s ease;
   }
   .close-btn:hover {
     transform: scale(1.15) rotate(90deg);
@@ -557,7 +642,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.15s ease, background 0.15s ease;
+    transition:
+      color 0.15s ease,
+      background 0.15s ease;
   }
   .copy-icon-btn:hover {
     color: #ffffff;
@@ -609,7 +696,10 @@
     font-size: 15px;
     font-weight: 700;
     cursor: pointer;
-    transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    transition:
+      background 0.15s ease,
+      transform 0.1s ease,
+      box-shadow 0.15s ease;
     box-shadow: 0 4px 14px rgba(250, 204, 21, 0.3);
     margin-top: 4px;
   }
@@ -751,4 +841,3 @@
     }
   }
 </style>
-

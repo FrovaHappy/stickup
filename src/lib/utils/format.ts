@@ -3,12 +3,11 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 
 export const SIZE_PRESETS: SizePreset[] = [
   { label: 'Original', value: 'original' },
-  { label: '25x25', width: 25, height: 25, value: '25' },
-  { label: '32x32', width: 32, height: 32, value: '32' },
   { label: '48x48', width: 48, height: 48, value: '48' },
   { label: '64x64', width: 64, height: 64, value: '64' },
-  { label: '112x112', width: 112, height: 112, value: '112' },
-  { label: '128x128', width: 128, height: 128, value: '128' }
+  { label: '128x128', width: 128, height: 128, value: '128' },
+  { label: '256x256', width: 256, height: 256, value: '256' },
+  { label: '512x512', width: 512, height: 512, value: '512' }
 ];
 
 export const STATIC_FORMAT_PRESETS = ['webp', 'png', 'jpg'] as const;
