@@ -2,11 +2,13 @@
   import { onMount } from 'svelte';
   import EmoteGrid from '$lib/components/EmoteGrid.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
+  import SearchFilterBar from '$lib/components/SearchFilterBar.svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import EmoteDetailModal from '$lib/components/detail/EmoteDetailModal.svelte';
-  import emotes, { loadEmotes, type Emote } from '$lib/stores/emotes';
+  import { loadEmotes, type Emote } from '$lib/stores/emotes';
 
   let selected: Emote | null = null;
+  let filteredEmotes: Emote[] = [];
 
   onMount(() => {
     loadEmotes();
@@ -22,7 +24,8 @@
   <h1>Emotes</h1>
   <StorageSettings />
   <ImportButton />
-  <EmoteGrid emotes={$emotes} on:select={(e) => (selected = e.detail)} />
+  <SearchFilterBar bind:filteredEmotes />
+  <EmoteGrid emotes={filteredEmotes} on:select={(e) => (selected = e.detail)} />
   {#if selected}
     <EmoteDetailModal emote={selected} onClose={closeDetail} />
   {/if}

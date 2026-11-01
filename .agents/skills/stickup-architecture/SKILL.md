@@ -61,6 +61,7 @@ src/
     └── components/
         ├── StorageSettings.svelte   # Selector de ruta de guardado
         ├── ImportButton.svelte      # Botones de importación y resincronización con estadísticas
+        ├── SearchFilterBar.svelte   # Barra de búsqueda por nombre/tags y filtros preestablecidos
         ├── EmoteGrid.svelte         # Cuadrícula de emotes
         ├── EmoteCard.svelte         # Tarjeta individual de emote
         └── detail/                  # Subcomponentes del modal de detalle

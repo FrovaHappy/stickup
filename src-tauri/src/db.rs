@@ -22,6 +22,51 @@ fn project_root() -> PathBuf {
     PathBuf::new()
 }
 
+fn db_dir_config_file() -> PathBuf {
+    project_root().join(".stickup_db_dir")
+}
+
+pub fn get_active_db_dir() -> PathBuf {
+    if let Ok(raw) = fs::read_to_string(db_dir_config_file()) {
+        let clean = clean_path_str(raw.trim());
+        if !clean.is_empty() && !clean.contains("src-tauri") {
+            return PathBuf::from(clean);
+        }
+    }
+    project_root().join("emotes")
+}
+
+pub fn set_active_db_dir(path: &str, migrate: bool) -> Result<String, String> {
+    let p = PathBuf::from(path);
+    if !p.exists() {
+        fs::create_dir_all(&p).map_err(|e| format!("No se pudo crear la carpeta de BD: {}", e))?;
+    }
+    let abs = p.canonicalize().unwrap_or(p);
+    let abs_str = normalize_path(&abs);
+
+    if abs_str.contains("src-tauri") {
+        return Err(
+            "No se puede ubicar la base de datos dentro de src-tauri (provocaría recompilaciones)"
+                .to_string(),
+        );
+    }
+
+    let old_db = get_active_db_dir().join("emotes.db");
+    let new_db = abs.join("emotes.db");
+
+    if migrate && old_db != new_db && old_db.exists() {
+        fs::copy(&old_db, &new_db)
+            .map_err(|e| format!("No se pudo migrar emotes.db a la nueva ruta: {}", e))?;
+        let _ = fs::remove_file(&old_db);
+    }
+
+    fs::write(db_dir_config_file(), &abs_str)
+        .map_err(|e| format!("No se pudo guardar la configuración de ruta de BD: {}", e))?;
+
+    let _ = ensure_db()?;
+    Ok(abs_str)
+}
+
 pub fn get_active_emotes_dir(conn: &Connection) -> PathBuf {
     if let Ok(mut stmt) = conn.prepare("SELECT value FROM settings WHERE key = 'storage_path'") {
         if let Ok(path_str) = stmt.query_row([], |row| row.get::<_, String>(0)) {
@@ -41,10 +86,15 @@ pub fn get_active_emotes_dir(conn: &Connection) -> PathBuf {
 }
 
 pub fn ensure_db() -> Result<Connection, String> {
-    let db = project_root().join("emotes.db");
-    if let Some(parent) = db.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            let _ = fs::create_dir_all(parent);
+    let db_dir = get_active_db_dir();
+    if !db_dir.as_os_str().is_empty() && !db_dir.exists() {
+        let _ = fs::create_dir_all(&db_dir);
+    }
+    let db = db_dir.join("emotes.db");
+    let legacy_db = project_root().join("emotes.db");
+    if legacy_db != db && legacy_db.exists() && !db.exists() {
+        if fs::copy(&legacy_db, &db).is_ok() {
+            let _ = fs::remove_file(&legacy_db);
         }
     }
     let conn = Connection::open(&db).map_err(|e| format!("{}: {}", e, db.display()))?;

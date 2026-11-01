@@ -7,11 +7,15 @@
   const dispatch = createEventDispatcher<{ select: Emote }>();
 </script>
 
-<div class="grid">
-  {#each emotes as e (e.id)}
-    <EmoteCard {e} on:select={(ev) => dispatch('select', ev.detail)} />
-  {/each}
-</div>
+{#if emotes.length === 0}
+  <div class="empty-state">No se encontraron emotes con los filtros actuales.</div>
+{:else}
+  <div class="grid">
+    {#each emotes as e (e.id)}
+      <EmoteCard {e} on:select={(ev) => dispatch('select', ev.detail)} />
+    {/each}
+  </div>
+{/if}
 
 <style>
   .grid {
@@ -20,5 +24,10 @@
     gap: 14px;
     padding: 10px 0 40px 0;
     width: 100%;
+  }
+  .empty-state {
+    padding: 36px 16px;
+    color: #9ca3af;
+    font-size: 14px;
   }
 </style>

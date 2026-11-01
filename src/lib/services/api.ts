@@ -4,7 +4,10 @@ import type { Emote, ResyncStats } from '$lib/types/emote';
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
   getStoragePath: () => invoke<string>('get_storage_path'),
-  setStoragePath: (path: string) => invoke<string>('set_storage_path', { path }),
+  setStoragePath: (path: string, migrate = true) =>
+    invoke<string>('set_storage_path', { path, migrate }),
+  getDbPath: () => invoke<string>('get_db_path'),
+  setDbPath: (path: string, migrate = true) => invoke<string>('set_db_path', { path, migrate }),
   importFolder: (folderPath: string) => invoke<Emote[]>('import_folder', { folderPath }),
   deleteEmote: (id: number) => invoke<boolean>('delete_emote', { id }),
   updateTag: (id: number, name: string, tag: string) =>

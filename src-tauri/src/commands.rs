@@ -1,5 +1,8 @@
 use crate::clipboard;
-use crate::db::{clean_path_str, ensure_db, get_active_emotes_dir, normalize_path};
+use crate::db::{
+    clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
+    set_active_db_dir,
+};
 use crate::models::{Emote, ResyncStats};
 use image::codecs::gif::GifDecoder;
 use image::{AnimationDecoder, GenericImageView, ImageFormat};
@@ -78,7 +81,7 @@ pub fn get_storage_path() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn set_storage_path(path: String) -> Result<String, String> {
+pub fn set_storage_path(path: String, migrate: Option<bool>) -> Result<String, String> {
     let p = PathBuf::from(&path);
     if !p.exists() {
         fs::create_dir_all(&p).map_err(|e| format!("No se pudo crear la carpeta: {}", e))?;
@@ -86,14 +89,116 @@ pub fn set_storage_path(path: String) -> Result<String, String> {
     let abs = p.canonicalize().unwrap_or(p);
     let abs_str = normalize_path(&abs);
 
-    let conn = ensure_db()?;
-    conn.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",
-        params![&abs_str],
-    )
-    .map_err(|e| e.to_string())?;
+    if abs_str.contains("src-tauri") {
+        return Err(
+            "No se puede ubicar la carpeta de emotes dentro de src-tauri".to_string(),
+        );
+    }
+
+    let should_migrate = migrate.unwrap_or(false);
+    let mut should_migrate_db = false;
+
+    {
+        let conn = ensure_db()?;
+        let old_dir = get_active_emotes_dir(&conn);
+        let old_abs = old_dir.canonicalize().unwrap_or(old_dir);
+        let old_str = normalize_path(&old_abs);
+
+        let cur_db_dir = get_active_db_dir();
+        let cur_db_abs = cur_db_dir.canonicalize().unwrap_or(cur_db_dir);
+        let cur_db_str = normalize_path(&cur_db_abs);
+
+        if should_migrate && old_str.to_lowercase() != abs_str.to_lowercase() {
+            if cur_db_str.to_lowercase() == old_str.to_lowercase() {
+                should_migrate_db = true;
+            }
+
+            // 1. Migrar archivos registrados en la tabla emotes y actualizar sus rutas
+            let rows: Vec<(i64, String)> = {
+                let mut stmt = conn
+                    .prepare("SELECT id, path FROM emotes")
+                    .map_err(|e| e.to_string())?;
+                let mapped = stmt
+                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(|e| e.to_string())?;
+                mapped.flatten().collect()
+            };
+
+            for (id, raw_path) in rows {
+                let clean = clean_path_str(&raw_path);
+                let src_path = Path::new(&clean);
+                if let Some(file_name) = src_path.file_name() {
+                    let dest_path = abs.join(file_name);
+                    let dest_str = normalize_path(&dest_path);
+
+                    if src_path.exists() && src_path != dest_path {
+                        if fs::copy(src_path, &dest_path).is_ok() {
+                            let _ = fs::remove_file(src_path);
+                        }
+                    }
+
+                    let _ = conn.execute(
+                        "UPDATE emotes SET path = ?1 WHERE id = ?2",
+                        params![dest_str, id],
+                    );
+                }
+            }
+
+            // 2. Migrar imágenes sueltas que estuvieran en la carpeta anterior
+            if old_abs.exists() && old_abs.is_dir() {
+                if let Ok(entries) = fs::read_dir(&old_abs) {
+                    for entry in entries.flatten() {
+                        let entry_path = entry.path();
+                        if !entry_path.is_file() {
+                            continue;
+                        }
+                        let ext = entry_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+                            if let Some(fname) = entry_path.file_name() {
+                                let dest_path = abs.join(fname);
+                                if entry_path != dest_path && !dest_path.exists() {
+                                    if fs::copy(&entry_path, &dest_path).is_ok() {
+                                        let _ = fs::remove_file(&entry_path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",
+            params![&abs_str],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    if should_migrate_db {
+        let _ = set_active_db_dir(&abs_str, true)?;
+    }
 
     Ok(abs_str)
+}
+
+#[tauri::command]
+pub fn get_db_path() -> Result<String, String> {
+    let dir = get_active_db_dir();
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
+    let abs = dir.canonicalize().unwrap_or(dir);
+    Ok(normalize_path(&abs))
+}
+
+#[tauri::command]
+pub fn set_db_path(path: String, migrate: Option<bool>) -> Result<String, String> {
+    set_active_db_dir(&path, migrate.unwrap_or(true))
 }
 
 #[tauri::command]

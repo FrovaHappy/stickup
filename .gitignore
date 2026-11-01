@@ -12,4 +12,5 @@ vite.config.ts.timestamp-*
 *.db-journal
 *.db-wal
 *.db-shm
+.stickup_db_dir
 /emotes/*
