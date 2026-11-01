@@ -11,7 +11,7 @@ export const SIZE_PRESETS: SizePreset[] = [
   { label: '128x128', width: 128, height: 128, value: '128' }
 ];
 
-export const STATIC_FORMAT_PRESETS = ['png', 'jpg', 'webp'] as const;
+export const STATIC_FORMAT_PRESETS = ['webp', 'png', 'jpg'] as const;
 export const ANIMATED_FORMAT_PRESETS = ['gif'] as const;
 
 export function isAnimatedEmote(emote: Emote | null): boolean {
