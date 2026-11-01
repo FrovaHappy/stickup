@@ -11,7 +11,20 @@ export const SIZE_PRESETS: SizePreset[] = [
   { label: '128x128', width: 128, height: 128, value: '128' }
 ];
 
-export const FORMAT_PRESETS = ['webp', 'png', 'gif', 'jpg'] as const;
+export const STATIC_FORMAT_PRESETS = ['png', 'jpg', 'webp'] as const;
+export const ANIMATED_FORMAT_PRESETS = ['gif'] as const;
+
+export function isAnimatedEmote(emote: Emote | null): boolean {
+  if (!emote) return false;
+  return (
+    emote.format?.toLowerCase() === 'gif' ||
+    emote.path?.toLowerCase().endsWith('.gif')
+  );
+}
+
+export function getAvailableFormats(emote: Emote | null): readonly string[] {
+  return isAnimatedEmote(emote) ? ANIMATED_FORMAT_PRESETS : STATIC_FORMAT_PRESETS;
+}
 
 export function getMimeType(format: string): string {
   switch (format.toLowerCase()) {

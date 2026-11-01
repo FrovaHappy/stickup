@@ -4,10 +4,11 @@
   import { api } from '$lib/services/api';
   import { loadEmotes, topHotEmoteIds, isEmoteNewByDate } from '$lib/stores/emotes';
   import {
-    FORMAT_PRESETS,
     SIZE_PRESETS,
     formatFileSize,
+    getAvailableFormats,
     getMimeType,
+    isAnimatedEmote,
     renderEmoteToCanvas,
     resolveDimensions
   } from '$lib/utils/format';
@@ -52,6 +53,12 @@
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
+  }
+
+  $: isAnimated = isAnimatedEmote(emote);
+  $: availableFormats = getAvailableFormats(emote);
+  $: if (emote && !availableFormats.includes(selectedFormat)) {
+    selectedFormat = isAnimated ? 'gif' : 'webp';
   }
 
   $: isHot = emote ? $topHotEmoteIds.has(emote.id) : false;
@@ -292,9 +299,9 @@
       </div>
 
       <div class="options-section">
-        <div class="options-label">Formato a copiar (Default: WebP):</div>
+        <div class="options-label">Formato a copiar (Default: {isAnimated ? 'GIF' : 'WebP'}):</div>
         <div class="pills-row">
-          {#each FORMAT_PRESETS as fmt}
+          {#each availableFormats as fmt}
             <button
               type="button"
               class="pill-btn {selectedFormat === fmt ? 'active' : ''}"
