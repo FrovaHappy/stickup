@@ -5,12 +5,14 @@
 ## 📌 Funcionalidades Implementadas
 
 ### Importación y Procesamiento de Archivos
+
 - [x] **Importación individual**: Carga múltiple de archivos de imagen (`PNG`, `JPG`, `JPEG`, `GIF`, `WebP`).
 - [x] **Importación por lote (carpetas)**: Escaneo y carga recursiva de carpetas completas.
 - [x] **Migración automática a WebP**: Conversión en lote de imágenes estáticas a `.webp` para optimizar almacenamiento y velocidad.
 - [x] **Preservación de GIFs animados**: Detección de cuadros múltiples (`GifDecoder`); se conservan intactos en `.gif` con sus retardos y bucles sin perder fotogramas.
 
 ### Gestión de Tags y Metadatos
+
 - [x] **Gestor de etiquetas en chips**: Agregar y eliminar tags de forma unitaria en cada emote.
 - [x] **Autocompletado y sugerencias globales**: Desplegable flotante en tiempo real con tags existentes en la base de datos para reutilizarlos con un clic.
 - [x] **Búsqueda y filtrado dinámico**: Filtrado en la vista de cuadrícula por nombre y etiquetas.
@@ -18,6 +20,7 @@
 - [x] **Persistencia en SQLite**: Almacenamiento seguro en `emotes.db` sin provocar reinicios de la aplicación durante escrituras.
 
 ### Portapapeles Multiplataforma
+
 - [x] **Copiado en Windows (Win32 nativo)**:
   - [x] `CF_HDROP`: Copia el archivo real en el portapapeles para pegarlo directamente en Discord, Telegram, WhatsApp Web, Slack y Explorador de Windows.
   - [x] Soporte especial para GIFs: Exclusión de `CF_DIB` para evitar que aplicaciones de chat congelen la animación en el primer frame.
@@ -31,6 +34,7 @@
 - [x] **Fallback en frontend**: Copiado secundario mediante navegador si falla el backend nativo.
 
 ### Redimensionamiento y Exportación
+
 - [x] **Presets de tamaño rápidos**: Resoluciones predefinidas (32x32, 64x64, 128x128) y opción de tamaño personalizado.
 - [x] **Redimensionamiento de GIFs frame a frame**: Re-escalado Lanczos3 cuadro por cuadro conservando los tiempos de retraso y bucle infinito.
 - [x] **Selector de formato de exportación**: Posibilidad de elegir entre PNG, WEBP, GIF o JPG.
@@ -38,25 +42,22 @@
 - [x] **Descarga directa**: Botón para descargar el archivo procesado a la carpeta del usuario.
 
 ### Almacenamiento y Sistema
+
 - [x] **Ruta de almacenamiento configurable**: Selector de carpeta personalizada para guardar la biblioteca de emotes.
 - [x] **Eliminación sincronizada**: Al borrar un emote, se elimina de la base de datos y se suprime físicamente del disco.
 
 ---
 
 ## ⏳ En Progreso / Planificadas (Backlog)
-- [ ] 
-- [ ] 
+
+- [ ]
+- [ ]
 
 ---
 
 ## 🗑️ Dropeados / Descartados (Cancelados)
+>
 > Ideas, formatos o implementaciones evaluadas que se descartaron y el motivo técnico de su descarte.
 
-- [x] **Conversión de GIFs animados a WebP animado**:
-  - *Motivo*: La librería Rust pura `image` no soporta codificación WebP multi-cuadro sin dependencias C complejas (`libwebp`), lo que provocaba la pérdida de los fotogramas y congelaba la animación. Se optó por preservar el contenedor `.gif` nativo.
-- [x] **Uso exclusivo de `navigator.clipboard.write()` en el frontend**:
-  - *Motivo*: La API del navegador web impone estrictamente `image/png` y no permite inyectar archivos (`CF_HDROP`), impidiendo copiar formatos nativos como WebP o GIFs animados hacia Discord o Telegram. Se reemplazó por comandos nativos multiplataforma en Tauri/Rust.
-- [x] **Emisión de `CF_DIB` en el portapapeles para GIFs animados en Windows**:
-  - *Motivo*: Al registrar `CF_DIB` junto a un GIF animado, Discord y navegadores web priorizan el mapa de bits plano sobre el archivo físico, convirtiendo el GIF en un PNG estático al presionar `Ctrl + V`. Se descartó el uso de DIB para animaciones.
-- [x] **Base de datos dentro de `src-tauri/` en modo desarrollo**:
-  - *Motivo*: Al modificar o añadir tags, las escrituras en `src-tauri/emotes.db` disparaban el observador de cambios de Tauri (`cargo watch`), reiniciando y recompilando la aplicación con cada interacción del usuario. Se reubicó en la raíz del proyecto.
+- [ ]
+- [ ]
