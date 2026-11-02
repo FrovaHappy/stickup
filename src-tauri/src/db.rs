@@ -2,6 +2,9 @@ use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub const DB_FILE_NAME: &str = ".store.db";
+const LEGACY_DB_FILE_NAME: &str = "emotes.db";
+
 pub fn clean_path_str(raw_path: &str) -> String {
     raw_path.strip_prefix(r"\\?\").unwrap_or(raw_path).to_string()
 }
@@ -22,18 +25,83 @@ fn project_root() -> PathBuf {
     PathBuf::new()
 }
 
+fn os_documents_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let docs = PathBuf::from(&profile).join("Documents");
+            if docs.exists() {
+                return Some(docs);
+            }
+            if let Ok(onedrive) = std::env::var("OneDrive") {
+                let od_docs = PathBuf::from(onedrive).join("Documents");
+                if od_docs.exists() {
+                    return Some(od_docs);
+                }
+            }
+            return Some(docs);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DOCUMENTS_DIR") {
+            let trimmed = xdg.trim();
+            if !trimmed.is_empty() {
+                return Some(PathBuf::from(trimmed));
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            let docs = home_path.join("Documents");
+            if docs.exists() {
+                return Some(docs);
+            }
+            let docs_es = home_path.join("Documentos");
+            if docs_es.exists() {
+                return Some(docs_es);
+            }
+            return Some(docs);
+        }
+    }
+    None
+}
+
+fn default_emotes_dir() -> PathBuf {
+    os_documents_dir()
+        .unwrap_or_else(project_root)
+        .join("emotes")
+}
+
 fn db_dir_config_file() -> PathBuf {
     project_root().join(".stickup_db_dir")
 }
 
+pub fn upgrade_legacy_db_in_dir(dir: &Path) {
+    let store_db = dir.join(DB_FILE_NAME);
+    let legacy_db = dir.join(LEGACY_DB_FILE_NAME);
+    if !store_db.exists() && legacy_db.exists() {
+        if fs::rename(&legacy_db, &store_db).is_err() && fs::copy(&legacy_db, &store_db).is_ok() {
+            let _ = fs::remove_file(&legacy_db);
+        }
+    }
+}
+
 pub fn get_active_db_dir() -> PathBuf {
-    if let Ok(raw) = fs::read_to_string(db_dir_config_file()) {
+    let cfg = db_dir_config_file();
+    if let Ok(raw) = fs::read_to_string(&cfg) {
         let clean = clean_path_str(raw.trim());
         if !clean.is_empty() && !clean.contains("src-tauri") {
             return PathBuf::from(clean);
         }
     }
-    project_root().join("emotes")
+    let default_dir = default_emotes_dir();
+    if !default_dir.exists() {
+        let _ = fs::create_dir_all(&default_dir);
+    }
+    let abs = default_dir.canonicalize().unwrap_or(default_dir);
+    let abs_str = normalize_path(&abs);
+    let _ = fs::write(&cfg, &abs_str);
+    abs
 }
 
 pub fn set_active_db_dir(path: &str, migrate: bool) -> Result<String, String> {
@@ -51,12 +119,16 @@ pub fn set_active_db_dir(path: &str, migrate: bool) -> Result<String, String> {
         );
     }
 
-    let old_db = get_active_db_dir().join("emotes.db");
-    let new_db = abs.join("emotes.db");
+    let old_dir = get_active_db_dir();
+    upgrade_legacy_db_in_dir(&old_dir);
+    upgrade_legacy_db_in_dir(&abs);
+
+    let old_db = old_dir.join(DB_FILE_NAME);
+    let new_db = abs.join(DB_FILE_NAME);
 
     if migrate && old_db != new_db && old_db.exists() {
         fs::copy(&old_db, &new_db)
-            .map_err(|e| format!("No se pudo migrar emotes.db a la nueva ruta: {}", e))?;
+            .map_err(|e| format!("No se pudo migrar {} a la nueva ruta: {}", DB_FILE_NAME, e))?;
         let _ = fs::remove_file(&old_db);
     }
 
@@ -90,11 +162,12 @@ pub fn ensure_db() -> Result<Connection, String> {
     if !db_dir.as_os_str().is_empty() && !db_dir.exists() {
         let _ = fs::create_dir_all(&db_dir);
     }
-    let db = db_dir.join("emotes.db");
-    let legacy_db = project_root().join("emotes.db");
-    if legacy_db != db && legacy_db.exists() && !db.exists() {
-        if fs::copy(&legacy_db, &db).is_ok() {
-            let _ = fs::remove_file(&legacy_db);
+    upgrade_legacy_db_in_dir(&db_dir);
+    let db = db_dir.join(DB_FILE_NAME);
+    let legacy_root_db = project_root().join(LEGACY_DB_FILE_NAME);
+    if legacy_root_db != db && legacy_root_db.exists() && !db.exists() {
+        if fs::copy(&legacy_root_db, &db).is_ok() {
+            let _ = fs::remove_file(&legacy_root_db);
         }
     }
     let conn = Connection::open(&db).map_err(|e| format!("{}: {}", e, db.display()))?;

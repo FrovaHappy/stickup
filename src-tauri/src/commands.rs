@@ -1,7 +1,7 @@
 use crate::clipboard::{self, ClipboardPayload};
 use crate::db::{
     clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
-    set_active_db_dir,
+    set_active_db_dir, upgrade_legacy_db_in_dir, DB_FILE_NAME,
 };
 use crate::models::{Emote, ResyncStats};
 use image::codecs::gif::GifDecoder;
@@ -407,8 +407,10 @@ pub fn set_storage_path(
     let should_migrate = migrate.unwrap_or(false);
     let cur_db_dir = get_active_db_dir();
     let cur_db_abs = cur_db_dir.canonicalize().unwrap_or(cur_db_dir);
-    let old_db = cur_db_abs.join("emotes.db");
-    let new_db = abs.join("emotes.db");
+    upgrade_legacy_db_in_dir(&cur_db_abs);
+    upgrade_legacy_db_in_dir(&abs);
+    let old_db = cur_db_abs.join(DB_FILE_NAME);
+    let new_db = abs.join(DB_FILE_NAME);
 
     let old_count = count_db_emotes(&old_db);
     let new_count = count_db_emotes(&new_db);

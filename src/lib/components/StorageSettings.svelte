@@ -36,7 +36,7 @@
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Seleccionar carpeta para emotes y base de datos (emotes.db)'
+        title: 'Seleccionar carpeta para emotes y base de datos (.store.db)'
       });
 
       if (!selected) return;
@@ -96,8 +96,8 @@
 <div class="storage-box">
   <div class="info-row">
     <span class="path-label">💾 Directorio (Emotes y BD):</span>
-    <span class="path-val" title={storagePath ? `${storagePath} (incluye emotes.db)` : ''}>
-      {storagePath ? `${storagePath} (emotes.db)` : 'Cargando...'}
+    <span class="path-val" title={storagePath ? `${storagePath} (incluye .store.db)` : ''}>
+      {storagePath ? `${storagePath} (.store.db)` : 'Cargando...'}
     </span>
     <button type="button" class="change-btn" disabled={isBusy} on:click={pickStoragePath}>
       ✏️ Cambiar ruta
@@ -109,7 +109,7 @@
       {#if askDbConflict}
         <div class="prompt-header">
           <span class="prompt-title">
-            ⚠️ Ya existe una base de datos (emotes.db) en el destino. ¿Cuál deseas conservar?
+            ⚠️ Ya existe una base de datos (.store.db) en el destino. ¿Cuál deseas conservar?
           </span>
         </div>
         <div class="prompt-dest" title={pendingTargetPath}>
@@ -117,7 +117,7 @@
         </div>
         <p class="prompt-desc">
           Se moverán todas tus imágenes a la nueva carpeta. Elige qué archivo
-          <code>emotes.db</code> tendrá prioridad para tus tags, nombres y estadísticas:
+          <code>.store.db</code> tendrá prioridad para tus tags, nombres y estadísticas:
         </p>
         <div class="prompt-actions">
           <button
@@ -156,7 +156,7 @@
         </div>
         <p class="prompt-desc">
           <strong>Migrar todo</strong> moverá todas las imágenes actuales, actualizará sus rutas y
-          trasladará <code>emotes.db</code> junto con tus tags y estadísticas a la nueva carpeta.
+          trasladará <code>.store.db</code> junto con tus tags y estadísticas a la nueva carpeta.
         </p>
         <div class="prompt-actions">
           <button
