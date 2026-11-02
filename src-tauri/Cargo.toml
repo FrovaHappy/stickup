@@ -1,13 +1,15 @@
 [package]
-name = "app"
+name = "stickup"
 version = "0.1.1-dev.2"
 description = "StickUp - Gestor de Emotes"
 authors = ["FrovaHappy"]
+license = "MIT"
+repository = "https://github.com/FrovaHappy/stickup"
 edition = "2021"
 build = "build.rs"
 
 [lib]
-name = "app_lib"
+name = "stickup_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

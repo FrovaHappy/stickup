@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "app",
+  "productName": "StickUp",
+  "mainBinaryName": "stickup",
   "version": "0.1.1-2",
-  "identifier": "FrovaHappy",
+  "identifier": "com.frovahappy.stickup",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +13,9 @@
   "app": {
     "windows": [
       {
-        "title": "app",
-        "width": 800,
-        "height": 600
+        "title": "StickUp",
+        "width": 960,
+        "height": 680
       }
     ],
     "security": {

@@ -135,7 +135,7 @@ jobs:
             const lockPath = "src-tauri/Cargo.lock";
             if (fs.existsSync(lockPath)) {
               let cargoLock = fs.readFileSync(lockPath, "utf8");
-              cargoLock = cargoLock.replace(/(name = "app"\r?\nversion = ")[^"]*(")/, `$1${ver}$2`);
+              cargoLock = cargoLock.replace(/(name = "stickup"\r?\nversion = ")[^"]*(")/, `$1${ver}$2`);
               fs.writeFileSync(lockPath, cargoLock);
             }
           ' "$NEW_VERSION"
@@ -159,8 +159,8 @@ jobs:
           cp src-tauri/target/release/bundle/deb/*.deb release-assets/installers/
           cp src-tauri/target/release/bundle/appimage/*.AppImage release-assets/installers/
           cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe release-assets/installers/
-          cp src-tauri/target/release/app release-assets/binaries/stickup-linux-x64
-          cp src-tauri/target/x86_64-pc-windows-msvc/release/app.exe release-assets/binaries/stickup-windows-x64.exe
+          cp src-tauri/target/release/stickup release-assets/binaries/stickup-linux-x64
+          cp src-tauri/target/x86_64-pc-windows-msvc/release/stickup.exe release-assets/binaries/stickup-windows-x64.exe
 
       - name: Push commit and tag
         run: git push origin HEAD "${{ steps.version.outputs.tag }}"

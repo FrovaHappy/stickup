@@ -1,7 +1,13 @@
 {
-  "name": "app",
+  "name": "stickup",
   "version": "0.1.1-dev.2",
   "description": "StickUp - Gestor de Emotes",
+  "author": "FrovaHappy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FrovaHappy/stickup.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -13,7 +19,6 @@
     "prebuild": "pnpm run check && vitest run && vite build && cargo test --manifest-path src-tauri/Cargo.toml",
     "tauri": "tauri"
   },
-  "license": "MIT",
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.8.4"
