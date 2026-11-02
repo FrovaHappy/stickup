@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "0.1.1-dev.0"
 description = "StickUp - Gestor de Emotes"
 authors = ["FrovaHappy"]
 edition = "2021"
