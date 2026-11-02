@@ -4,10 +4,8 @@ import type { Emote, ResyncStats } from '$lib/types/emote';
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
   getStoragePath: () => invoke<string>('get_storage_path'),
-  setStoragePath: (path: string, migrate = true) =>
-    invoke<string>('set_storage_path', { path, migrate }),
-  getDbPath: () => invoke<string>('get_db_path'),
-  setDbPath: (path: string, migrate = true) => invoke<string>('set_db_path', { path, migrate }),
+  setStoragePath: (path: string, migrate = true, overwriteDb?: boolean) =>
+    invoke<string>('set_storage_path', { path, migrate, overwriteDb: overwriteDb ?? null }),
   importPaths: (paths: string[]) => invoke<Emote[]>('import_paths', { paths }),
   importRawBytes: (bytes: number[], name?: string) =>
     invoke<Emote>('import_raw_bytes', { bytes, name: name?.trim() || null }),

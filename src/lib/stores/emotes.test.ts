@@ -16,13 +16,16 @@ function makeEmote(overrides: Partial<Emote>): Emote {
 }
 
 describe('emotes store helpers', () => {
-  it('identifies newly created emotes within 24 hours', () => {
+  it('identifies newly created emotes within 10 minutes', () => {
     expect(isEmoteNewByDate(null)).toBe(false);
     expect(isEmoteNewByDate('invalid-date')).toBe(false);
     expect(isEmoteNewByDate(new Date().toISOString())).toBe(true);
 
-    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    expect(isEmoteNewByDate(twoDaysAgo)).toBe(false);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    expect(isEmoteNewByDate(fiveMinutesAgo)).toBe(true);
+
+    const elevenMinutesAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    expect(isEmoteNewByDate(elevenMinutesAgo)).toBe(false);
   });
 
   it('sorts emotes by copy_count descending, then last_used_at, then id', () => {

@@ -7,8 +7,8 @@ export type { Emote };
 
 const emotes: Writable<Emote[]> = writable([]);
 
-// Ventana de tiempo para considerar un emote como "Nuevo" por su fecha de creación (24 horas)
-const NEW_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+// Ventana de tiempo para considerar un emote como "Nuevo" por su fecha de creación (10 minutos)
+const NEW_THRESHOLD_MS = 10 * 60 * 1000;
 
 export function isEmoteNewByDate(createdAt?: string | null): boolean {
   if (!createdAt) return false;

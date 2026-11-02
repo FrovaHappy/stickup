@@ -76,7 +76,7 @@ pub fn get_active_emotes_dir(conn: &Connection) -> PathBuf {
             }
         }
     }
-    let default_dir = project_root().join("emotes");
+    let default_dir = get_active_db_dir();
     let norm = normalize_path(&default_dir);
     let _ = conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",

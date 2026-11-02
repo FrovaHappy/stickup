@@ -15,8 +15,6 @@ pub fn run() {
             commands::import_from_clipboard,
             commands::get_storage_path,
             commands::set_storage_path,
-            commands::get_db_path,
-            commands::set_db_path,
             commands::delete_emote,
             commands::update_tag,
             commands::copy_to_clipboard,

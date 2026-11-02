@@ -5,15 +5,14 @@
   import { loadEmotes } from '$lib/stores/emotes';
 
   let storagePath = '';
-  let dbPath = '';
   let message = '';
   let isError = false;
   let isBusy = false;
 
-  let pendingChange: {
-    kind: 'storage' | 'db';
-    targetPath: string;
-  } | null = null;
+  let pendingTargetPath: string | null = null;
+  let askDbConflict = false;
+  let currentDbCount = 0;
+  let targetDbCount = 0;
 
   function showStatus(msg: string, error = false) {
     message = msg;
@@ -25,11 +24,9 @@
 
   onMount(async () => {
     try {
-      const [sPath, dPath] = await Promise.all([api.getStoragePath(), api.getDbPath()]);
-      storagePath = sPath;
-      dbPath = dPath;
+      storagePath = await api.getStoragePath();
     } catch (e) {
-      console.error('Error al obtener las rutas de almacenamiento:', e);
+      console.error('Error al obtener la ruta de almacenamiento:', e);
     }
   });
 
@@ -39,14 +36,15 @@
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Seleccionar carpeta para guardar emotes'
+        title: 'Seleccionar carpeta para emotes y base de datos (emotes.db)'
       });
 
       if (!selected) return;
 
       const newPath = Array.isArray(selected) ? selected[0] : selected;
       if (newPath && newPath.toLowerCase() !== storagePath.toLowerCase()) {
-        pendingChange = { kind: 'storage', targetPath: newPath };
+        pendingTargetPath = newPath;
+        askDbConflict = false;
       }
     } catch (e: any) {
       console.error('Error al seleccionar la ruta de almacenamiento:', e);
@@ -54,56 +52,41 @@
     }
   }
 
-  async function pickDbPath() {
-    if (isBusy) return;
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: 'Seleccionar carpeta para la base de datos (emotes.db)'
-      });
-
-      if (!selected) return;
-
-      const newPath = Array.isArray(selected) ? selected[0] : selected;
-      if (newPath && newPath.toLowerCase() !== dbPath.toLowerCase()) {
-        pendingChange = { kind: 'db', targetPath: newPath };
-      }
-    } catch (e: any) {
-      console.error('Error al seleccionar el directorio de la base de datos:', e);
-      showStatus(`Error: ${e?.message || e}`, true);
-    }
+  function cancelPending() {
+    pendingTargetPath = null;
+    askDbConflict = false;
   }
 
-  async function applyPendingChange(migrate: boolean) {
-    if (!pendingChange || isBusy) return;
-    const { kind, targetPath } = pendingChange;
-    pendingChange = null;
+  async function applyPendingChange(migrate: boolean, overwriteDb?: boolean) {
+    if (!pendingTargetPath || isBusy) return;
+    const targetPath = pendingTargetPath;
     isBusy = true;
 
     try {
-      if (kind === 'storage') {
-        storagePath = await api.setStoragePath(targetPath, migrate);
-        dbPath = await api.getDbPath();
-        await loadEmotes();
-        showStatus(
-          migrate
-            ? '✓ Todo migrado exitosamente a la nueva carpeta'
-            : '✓ Ruta de emotes actualizada (sin migrar archivos)'
-        );
-      } else {
-        dbPath = await api.setDbPath(targetPath, migrate);
-        storagePath = await api.getStoragePath();
-        await loadEmotes();
-        showStatus(
-          migrate
-            ? '✓ Base de datos migrada al nuevo directorio'
-            : '✓ Directorio de base de datos actualizado'
-        );
-      }
+      storagePath = await api.setStoragePath(targetPath, migrate, overwriteDb);
+      pendingTargetPath = null;
+      askDbConflict = false;
+      await loadEmotes();
+      showStatus(
+        migrate
+          ? overwriteDb === false
+            ? '✓ Imágenes migradas conservando la base de datos del destino'
+            : '✓ Emotes y base de datos migrados a la nueva carpeta'
+          : '✓ Directorio de emotes y base de datos actualizado'
+      );
     } catch (e: any) {
-      console.error('Error al aplicar cambio de directorio:', e);
-      showStatus(`Error: ${e?.message || e}`, true);
+      const errText = String(e?.message || e || '');
+      if (errText.includes('DB_EXISTS_IN_TARGET')) {
+        const parts = errText.split(':');
+        currentDbCount = Number(parts[1]) || 0;
+        targetDbCount = Number(parts[2]) || 0;
+        askDbConflict = true;
+      } else {
+        pendingTargetPath = null;
+        askDbConflict = false;
+        console.error('Error al aplicar cambio de directorio:', e);
+        showStatus(`Error: ${errText}`, true);
+      }
     } finally {
       isBusy = false;
     }
@@ -112,67 +95,96 @@
 
 <div class="storage-box">
   <div class="info-row">
-    <span class="path-label">💾 Guardar emotes en:</span>
-    <span class="path-val" title={storagePath}>{storagePath || 'Cargando...'}</span>
+    <span class="path-label">💾 Directorio (Emotes y BD):</span>
+    <span class="path-val" title={storagePath ? `${storagePath} (incluye emotes.db)` : ''}>
+      {storagePath ? `${storagePath} (emotes.db)` : 'Cargando...'}
+    </span>
     <button type="button" class="change-btn" disabled={isBusy} on:click={pickStoragePath}>
       ✏️ Cambiar ruta
     </button>
   </div>
 
-  <div class="info-row">
-    <span class="path-label">🗄️ Directorio de BD:</span>
-    <span class="path-val" title="{dbPath}/emotes.db">
-      {dbPath ? `${dbPath} (emotes.db)` : 'Cargando...'}
-    </span>
-    <button type="button" class="change-btn" disabled={isBusy} on:click={pickDbPath}>
-      ✏️ Cambiar BD
-    </button>
-  </div>
-
-  {#if pendingChange}
+  {#if pendingTargetPath}
     <div class="migration-prompt">
-      <div class="prompt-header">
-        <span class="prompt-title">
-          {pendingChange.kind === 'storage'
-            ? '📦 ¿Deseas migrar todo a la nueva carpeta?'
-            : '🗄️ ¿Deseas migrar la base de datos actual al nuevo directorio?'}
-        </span>
-      </div>
-      <div class="prompt-dest" title={pendingChange.targetPath}>
-        Destino: <code>{pendingChange.targetPath}</code>
-      </div>
-      <p class="prompt-desc">
-        {#if pendingChange.kind === 'storage'}
-          <strong>Migrar todo</strong> moverá todas las imágenes actuales, actualizará sus rutas en la
-          base de datos y trasladará <code>emotes.db</code> junto con ellas.
-        {:else}
-          <strong>Migrar BD</strong> moverá el archivo <code>emotes.db</code> actual con todos tus tags
-          y estadísticas al nuevo directorio.
-        {/if}
-      </p>
-      <div class="prompt-actions">
-        <button
-          type="button"
-          class="prompt-btn migrate"
-          on:click={() => applyPendingChange(true)}
-        >
-          {pendingChange.kind === 'storage' ? '📦 Migrar todo (Imágenes + BD)' : '📦 Migrar BD actual'}
-        </button>
-        <button
-          type="button"
-          class="prompt-btn switch-only"
-          on:click={() => applyPendingChange(false)}
-        >
-          📁 Solo cambiar ruta
-        </button>
-        <button
-          type="button"
-          class="prompt-btn cancel"
-          on:click={() => (pendingChange = null)}
-        >
-          Cancelar
-        </button>
-      </div>
+      {#if askDbConflict}
+        <div class="prompt-header">
+          <span class="prompt-title">
+            ⚠️ Ya existe una base de datos (emotes.db) en el destino. ¿Cuál deseas conservar?
+          </span>
+        </div>
+        <div class="prompt-dest" title={pendingTargetPath}>
+          Destino: <code>{pendingTargetPath}</code>
+        </div>
+        <p class="prompt-desc">
+          Se moverán todas tus imágenes a la nueva carpeta. Elige qué archivo
+          <code>emotes.db</code> tendrá prioridad para tus tags, nombres y estadísticas:
+        </p>
+        <div class="prompt-actions">
+          <button
+            type="button"
+            class="prompt-btn migrate"
+            disabled={isBusy}
+            on:click={() => applyPendingChange(true, true)}
+          >
+            🗂️ Conservar BD actual ({currentDbCount} emotes)
+          </button>
+          <button
+            type="button"
+            class="prompt-btn switch-only"
+            disabled={isBusy}
+            on:click={() => applyPendingChange(true, false)}
+          >
+            📥 Conservar BD del destino ({targetDbCount} emotes)
+          </button>
+          <button
+            type="button"
+            class="prompt-btn cancel"
+            disabled={isBusy}
+            on:click={cancelPending}
+          >
+            Cancelar
+          </button>
+        </div>
+      {:else}
+        <div class="prompt-header">
+          <span class="prompt-title">
+            📦 ¿Deseas migrar tus emotes y base de datos a la nueva carpeta?
+          </span>
+        </div>
+        <div class="prompt-dest" title={pendingTargetPath}>
+          Destino: <code>{pendingTargetPath}</code>
+        </div>
+        <p class="prompt-desc">
+          <strong>Migrar todo</strong> moverá todas las imágenes actuales, actualizará sus rutas y
+          trasladará <code>emotes.db</code> junto con tus tags y estadísticas a la nueva carpeta.
+        </p>
+        <div class="prompt-actions">
+          <button
+            type="button"
+            class="prompt-btn migrate"
+            disabled={isBusy}
+            on:click={() => applyPendingChange(true)}
+          >
+            📦 Migrar todo (Imágenes + BD)
+          </button>
+          <button
+            type="button"
+            class="prompt-btn switch-only"
+            disabled={isBusy}
+            on:click={() => applyPendingChange(false)}
+          >
+            📁 Solo cambiar ruta
+          </button>
+          <button
+            type="button"
+            class="prompt-btn cancel"
+            disabled={isBusy}
+            on:click={cancelPending}
+          >
+            Cancelar
+          </button>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -216,7 +228,6 @@
     font-weight: 600;
     color: #4b5563;
     white-space: nowrap;
-    min-width: 145px;
     text-align: left;
   }
   .path-val {
