@@ -12,7 +12,7 @@ on:
           - minor
           - fix
           - dev
-        default: 'fix'
+        default: 'dev'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,15 +22,12 @@ permissions:
   contents: write
 
 jobs:
-  prepare:
-    name: Validate & Bump Version
+  build-and-release:
+    name: Test, Build (Linux & Windows) & Release
     runs-on: ubuntu-latest
     environment: release
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      sha: ${{ steps.version.outputs.sha }}
-      version: ${{ steps.version.outputs.version }}
-      is_dev: ${{ steps.version.outputs.is_dev }}
+    env:
+      XWIN_CACHE_DIR: ${{ github.workspace }}/src-tauri/target/.xwin-cache
 
     steps:
       - name: Checkout code
@@ -45,6 +42,25 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Install Linux & Cross-Compile system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            nsis \
+            lld \
+            llvm \
+            clang
+
       - name: Enable Corepack
         run: corepack enable
 
@@ -53,6 +69,20 @@ jobs:
         with:
           node-version: '24'
           cache: 'pnpm'
+
+      - name: Setup Rust (Linux + Windows target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install cargo-xwin
+        uses: taiki-e/install-action@cargo-xwin
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+          cache-on-failure: true
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -63,7 +93,10 @@ jobs:
       - name: Run frontend tests
         run: npx vitest run
 
-      - name: Bump version and commit
+      - name: Run backend Rust tests
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Bump version and commit locally
         id: version
         run: |
           if [ "${{ github.event.inputs.bump_type }}" == "dev" ]; then
@@ -85,14 +118,12 @@ jobs:
           NEW_VERSION=$(node -p "require('./package.json').version")
           NEW_TAG="v$NEW_VERSION"
 
-          # Sincronizar versión en tauri.conf.json, Cargo.toml y Cargo.lock sin compilar Rust aquí
           node -e '
             const fs = require("fs");
             const ver = process.argv[1];
 
             const tauriPath = "src-tauri/tauri.conf.json";
             const tauriConf = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
-            // WiX (MSI en Windows) exige que el pre-release en tauri.conf.json sea solo numérico (ej. 0.1.1-2)
             tauriConf.version = ver.replace(/-dev\.(\d+)$/, "-$1");
             fs.writeFileSync(tauriPath, JSON.stringify(tauriConf, null, 2) + "\n");
 
@@ -115,102 +146,32 @@ jobs:
 
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Tauri for Linux (.deb, .AppImage & binary)
+        run: pnpm tauri build --bundles deb,appimage
+
+      - name: Build Tauri for Windows (.exe NSIS & binary)
+        run: pnpm tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis --config '{"build":{"beforeBuildCommand":""}}'
+
+      - name: Collect installers and uncompressed binaries
+        run: |
+          mkdir -p release-assets/installers release-assets/binaries
+          cp src-tauri/target/release/bundle/deb/*.deb release-assets/installers/
+          cp src-tauri/target/release/bundle/appimage/*.AppImage release-assets/installers/
+          cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe release-assets/installers/
+          cp src-tauri/target/release/app release-assets/binaries/stickup-linux-x64
+          cp src-tauri/target/x86_64-pc-windows-msvc/release/app.exe release-assets/binaries/stickup-windows-x64.exe
 
       - name: Push commit and tag
         run: git push origin HEAD "${{ steps.version.outputs.tag }}"
 
-  build:
-    name: Build (${{ matrix.os }})
-    needs: prepare
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            artifact_name: bundle-windows
-            bundle_paths: |
-              src-tauri/target/release/bundle/msi/*.msi
-              src-tauri/target/release/bundle/nsis/*.exe
-          - os: ubuntu-latest
-            artifact_name: bundle-linux
-            bundle_paths: |
-              src-tauri/target/release/bundle/deb/*.deb
-              src-tauri/target/release/bundle/appimage/*.AppImage
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: 'pnpm'
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: 'src-tauri -> target'
-          cache-on-failure: true
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run backend Rust tests (release profile shared with build)
-        run: cargo test --release --manifest-path src-tauri/Cargo.toml
-
-      - name: Build Tauri application
-        run: pnpm tauri build
-
-      - name: Upload bundle artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.bundle_paths }}
-          if-no-files-found: error
-
-  release:
-    name: Create GitHub Release
-    needs: [prepare, build]
-    if: ${{ needs.prepare.outputs.is_dev == 'false' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
       - name: Create GitHub Release
-        run: gh release create "${{ needs.prepare.outputs.tag }}" release-assets/* --repo "${{ github.repository }}" --generate-notes
+        if: ${{ steps.version.outputs.is_dev == 'false' }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            release-assets/installers/* \
+            release-assets/binaries/stickup-linux-x64 \
+            release-assets/binaries/stickup-windows-x64.exe \
+            --generate-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
