@@ -135,7 +135,7 @@ jobs:
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag
-        run: git push origin HEAD "$NEW_TAG"
+        run: git push origin HEAD "${{ steps.version.outputs.tag }}"
 
   build:
     name: Build (${{ matrix.os }})
