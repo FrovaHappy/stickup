@@ -742,3 +742,56 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
 
     Ok(stats)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_stem() {
+        assert_eq!(extract_stem(Path::new("/tmp/pepe_dance.gif")), "pepe_dance");
+        assert_eq!(extract_stem(Path::new("cat.webp")), "cat");
+    }
+
+    #[test]
+    fn test_infer_name_from_url() {
+        assert_eq!(
+            infer_name_from_url("https://cdn.example.com/emotes/pogchamp.png?v=123#main"),
+            "pogchamp"
+        );
+        assert_eq!(
+            infer_name_from_url("https://cdn.example.com/"),
+            "cdn.example"
+        );
+    }
+
+    #[test]
+    fn test_insert_emote_record_in_memory() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE emotes (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                tag TEXT,
+                path TEXT NOT NULL,
+                original_width INTEGER,
+                original_height INTEGER,
+                format TEXT,
+                created_at TEXT
+            );",
+        )
+        .unwrap();
+
+        let id = insert_emote_record(
+            &conn,
+            "pepe",
+            "/tmp/pepe.webp",
+            128,
+            128,
+            "webp",
+            "2026-11-01T00:00:00Z",
+        )
+        .expect("insert emote");
+        assert_eq!(id, 1);
+    }
+}

@@ -66,6 +66,7 @@ pub fn copy_emote(
     let final_path: PathBuf;
     let raw_bytes: Vec<u8>;
     let final_format: String;
+    #[cfg(windows)]
     let mut rgba_data: Option<(Vec<u8>, u32, u32)> = None;
 
     if is_animated_gif && !needs_resize {
@@ -109,16 +110,18 @@ pub fn copy_emote(
         final_format = "gif".to_string();
     } else {
         let img = image::open(p).map_err(|e| format!("Error cargando imagen: {}", e))?;
-        let processed = if needs_resize
-            && (img.width() != target_width || img.height() != target_height)
-        {
-            image::imageops::resize(&img, target_width, target_height, FilterType::Lanczos3)
-        } else {
-            img.to_rgba8()
-        };
+        let processed =
+            if needs_resize && (img.width() != target_width || img.height() != target_height) {
+                image::imageops::resize(&img, target_width, target_height, FilterType::Lanczos3)
+            } else {
+                img.to_rgba8()
+            };
 
         let (w, h) = (processed.width(), processed.height());
-        rgba_data = Some((processed.clone().into_raw(), w, h));
+        #[cfg(windows)]
+        {
+            rgba_data = Some((processed.clone().into_raw(), w, h));
+        }
 
         final_format = req_format.clone();
         let image_fmt = match req_format.as_str() {
@@ -187,4 +190,3 @@ pub fn copy_emote(
         Ok(true)
     }
 }
-

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "StickUp - Gestor de Emotes"
 authors = ["FrovaHappy"]
 edition = "2021"
+build = "build.rs"
 
 [lib]
 name = "app_lib"

@@ -159,3 +159,34 @@ pub fn ensure_db() -> Result<Connection, String> {
 
     Ok(conn)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_path_str_strips_unc_prefix() {
+        assert_eq!(
+            clean_path_str(r"\\?\C:\Users\happy\emotes\pepe.webp"),
+            r"C:\Users\happy\emotes\pepe.webp"
+        );
+        assert_eq!(
+            clean_path_str("/home/user/emotes/pepe.webp"),
+            "/home/user/emotes/pepe.webp"
+        );
+    }
+
+    #[test]
+    fn test_normalize_path() {
+        let p = Path::new(r"\\?\C:\emotes\test.gif");
+        assert_eq!(normalize_path(p), r"C:\emotes\test.gif");
+    }
+
+    #[test]
+    fn test_rejects_src_tauri_db_dir() {
+        let tmp = std::env::temp_dir().join("src-tauri").join("test_db_guard");
+        let res = set_active_db_dir(&tmp.to_string_lossy(), false);
+        assert!(res.is_err());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+}
