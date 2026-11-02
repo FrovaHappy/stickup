@@ -18,20 +18,41 @@ export function isEmoteNewByDate(createdAt?: string | null): boolean {
   return ageMs >= -60_000 && ageMs <= NEW_THRESHOLD_MS;
 }
 
-// Top 20 de emotes con más copias / interacciones (al menos 1 copia o interacción)
-export const topHotEmoteIds: Readable<Set<number>> = derived(emotes, ($emotes) => {
-  const active = $emotes.filter(
-    (e) => (e.copy_count ?? 0) > 0 || (e.interaction_count ?? 0) > 0
-  );
+function parseTimestamp(iso?: string | null): number {
+  if (!iso) return 0;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? 0 : ms;
+}
 
-  active.sort((a, b) => {
-    const scoreA = (a.copy_count ?? 0) * 3 + (a.interaction_count ?? 0);
-    const scoreB = (b.copy_count ?? 0) * 3 + (b.interaction_count ?? 0);
-    if (scoreB !== scoreA) return scoreB - scoreA;
-    return (b.copy_count ?? 0) - (a.copy_count ?? 0);
+/**
+ * Ordena exclusivamente por cantidad de copias (`copy_count`):
+ * 1. Mayor `copy_count` va primero (#1, #2, ...).
+ * 2. En caso de empate en copias, el copiado más recientemente (`last_used_at`).
+ * 3. Desempate determinista por `id` (no depende de abrir el modal).
+ */
+export function compareEmotesByPopularity(a: Emote, b: Emote): number {
+  const copiesA = a.copy_count ?? 0;
+  const copiesB = b.copy_count ?? 0;
+  if (copiesB !== copiesA) return copiesB - copiesA;
+
+  const lastCopiedDiff = parseTimestamp(b.last_used_at) - parseTimestamp(a.last_used_at);
+  if (lastCopiedDiff !== 0) return lastCopiedDiff;
+
+  return a.id - b.id;
+}
+
+// Mapa del Top 20: emote.id -> posición en el ranking (1..20)
+// Solo entran al Top 20 los emotes que han sido copiados al menos 1 vez (copy_count > 0)
+export const topHotRanks: Readable<Map<number, number>> = derived(emotes, ($emotes) => {
+  const copiedEmotes = $emotes.filter((e) => (e.copy_count ?? 0) > 0);
+
+  copiedEmotes.sort(compareEmotesByPopularity);
+
+  const rankMap = new Map<number, number>();
+  copiedEmotes.slice(0, 20).forEach((e, idx) => {
+    rankMap.set(e.id, idx + 1);
   });
-
-  return new Set(active.slice(0, 20).map((e) => e.id));
+  return rankMap;
 });
 
 export const allTags: Readable<string[]> = derived(emotes, ($emotes) => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Emote } from '$lib/types/emote';
-  import { isEmoteNewByDate, topHotEmoteIds } from '$lib/stores/emotes';
+  import { isEmoteNewByDate, topHotRanks } from '$lib/stores/emotes';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { createEventDispatcher } from 'svelte';
 
@@ -8,7 +8,8 @@
   const dispatch = createEventDispatcher<{ select: Emote }>();
 
   $: isNew = isEmoteNewByDate(e.created_at);
-  $: isHot = $topHotEmoteIds.has(e.id);
+  $: hotRank = $topHotRanks.get(e.id) ?? null;
+  $: isHot = hotRank !== null;
 </script>
 
 <button
@@ -21,11 +22,11 @@
     {#if isHot}
       <span
         class="badge hot-badge"
-        title="Top 20 más usados ({e.copy_count ?? 0} copias, {e.interaction_count ?? 0} interacciones)"
+        title="Top #{hotRank} más usado ({e.copy_count ?? 0} copias, {e.interaction_count ?? 0} interacciones)"
       >
         <svg
-          width="12"
-          height="12"
+          width="11"
+          height="11"
           viewBox="0 0 24 24"
           fill="currentColor"
           stroke="currentColor"
@@ -37,6 +38,7 @@
             d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
           ></path>
         </svg>
+        <span class="rank-num">#{hotRank}</span>
       </span>
     {/if}
 
@@ -122,7 +124,16 @@
     background: rgba(16, 185, 129, 0.92);
   }
   .hot-badge {
+    width: auto;
+    padding: 0 6px;
+    border-radius: 999px;
+    gap: 2px;
     background: linear-gradient(135deg, #f59e0b, #ef4444);
+  }
+  .rank-num {
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
   }
   @keyframes popIn {
     from {

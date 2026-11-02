@@ -4,7 +4,7 @@
   import { api } from "$lib/services/api";
   import {
     loadEmotes,
-    topHotEmoteIds,
+    topHotRanks,
     isEmoteNewByDate,
   } from "$lib/stores/emotes";
   import {
@@ -31,6 +31,7 @@
   let copyButtonText = "Copy to Clipboard";
   let copyCount = 0;
   let interactionCount = 0;
+  let initializedEmoteId: number | null = null;
 
   let newFileSize: number | null = null;
   let isCalculatingSize = false;
@@ -42,14 +43,15 @@
       emote.interaction_count = interactionCount;
       try {
         await api.recordInteraction(emote.id);
-        loadEmotes();
+        await loadEmotes();
       } catch {
         // Ignorar errores silenciosos de telemetría local
       }
     }
   });
 
-  $: if (emote) {
+  $: if (emote && emote.id !== initializedEmoteId) {
+    initializedEmoteId = emote.id;
     emoteName = emote.name ?? "";
     copyCount = emote.copy_count ?? 0;
     interactionCount = emote.interaction_count ?? 0;
@@ -65,7 +67,8 @@
     selectedFormat = isAnimated ? "gif" : "webp";
   }
 
-  $: isHot = emote ? $topHotEmoteIds.has(emote.id) : false;
+  $: hotRank = emote ? ($topHotRanks.get(emote.id) ?? null) : null;
+  $: isHot = hotRank !== null;
   $: isNew = emote ? isEmoteNewByDate(emote.created_at) : false;
 
   $: targetDimensions = resolveDimensions(emote, selectedSize);
@@ -169,10 +172,8 @@
       );
 
       copyCount += 1;
-      interactionCount += 1;
       emote.copy_count = copyCount;
-      emote.interaction_count = interactionCount;
-      loadEmotes();
+      await loadEmotes();
 
       copyButtonText = "✓ ¡Copiado!";
       showToast(
@@ -452,7 +453,7 @@
               {interactionCount === 1 ? "interacción" : "interacciones"}</span
             >
             {#if isHot}
-              <span class="diff-badge amber">🔥 Top 20</span>
+              <span class="diff-badge amber">🔥 Top #{hotRank}</span>
             {/if}
             {#if isNew}
               <span class="diff-badge green">🍃 Nuevo</span>

@@ -145,7 +145,13 @@ fn infer_name_from_url(url: &str) -> String {
 pub fn list_emotes() -> Result<Vec<Emote>, String> {
     let conn = ensure_db()?;
     let mut stmt = conn
-        .prepare("SELECT id, name, tag, path, original_width, original_height, format, created_at, COALESCE(copy_count, 0), COALESCE(interaction_count, 0), last_used_at FROM emotes ORDER BY created_at DESC")
+        .prepare(
+            "SELECT e.id, e.name, e.tag, e.path, e.original_width, e.original_height, e.format, e.created_at,
+                    COALESCE(v.copy_count, 0), COALESCE(v.interaction_count, 0), v.last_used_at
+             FROM emotes e
+             LEFT JOIN emote_votes v ON v.emote_id = e.id
+             ORDER BY e.created_at DESC, e.id DESC",
+        )
         .map_err(|e| e.to_string())?;
 
     let emote_iter = stmt
@@ -529,6 +535,7 @@ pub fn delete_emote(id: i64) -> Result<bool, String> {
     if let Some(p) = path {
         let _ = fs::remove_file(Path::new(&p));
     }
+    let _ = conn.execute("DELETE FROM emote_votes WHERE emote_id = ?1", params![id]);
     conn.execute("DELETE FROM emotes WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(true)
@@ -572,8 +579,13 @@ pub fn copy_to_clipboard(
             if let Ok(conn) = ensure_db() {
                 let now = chrono::Utc::now().to_rfc3339();
                 let _ = conn.execute(
-                    "UPDATE emotes SET copy_count = COALESCE(copy_count, 0) + 1, interaction_count = COALESCE(interaction_count, 0) + 1, last_used_at = ?1 WHERE id = ?2",
-                    params![now, emote_id],
+                    "INSERT INTO emote_votes (emote_id, copy_count, interaction_count, score, last_used_at)
+                     VALUES (?1, 1, 0, 1, ?2)
+                     ON CONFLICT(emote_id) DO UPDATE SET
+                         copy_count = copy_count + 1,
+                         score = copy_count + 1,
+                         last_used_at = excluded.last_used_at",
+                    params![emote_id, now],
                 );
             }
         }
@@ -584,10 +596,12 @@ pub fn copy_to_clipboard(
 #[tauri::command]
 pub fn record_interaction(id: i64) -> Result<bool, String> {
     let conn = ensure_db()?;
-    let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "UPDATE emotes SET interaction_count = COALESCE(interaction_count, 0) + 1, last_used_at = ?1 WHERE id = ?2",
-        params![now, id],
+        "INSERT INTO emote_votes (emote_id, copy_count, interaction_count, score, last_used_at)
+         VALUES (?1, 0, 1, 0, NULL)
+         ON CONFLICT(emote_id) DO UPDATE SET
+             interaction_count = interaction_count + 1",
+        params![id],
     )
     .map_err(|e| e.to_string())?;
     Ok(true)
@@ -619,6 +633,7 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
         for (id, raw_path) in rows {
             let clean = clean_path_str(&raw_path);
             if !Path::new(&clean).exists() {
+                let _ = conn.execute("DELETE FROM emote_votes WHERE emote_id = ?1", params![id]);
                 let _ = conn.execute("DELETE FROM emotes WHERE id = ?1", params![id]);
                 stats.removed_missing_from_db += 1;
             } else {

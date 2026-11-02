@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Emote } from '$lib/types/emote';
-  import emotes, { allTags, isEmoteNewByDate, topHotEmoteIds } from '$lib/stores/emotes';
+  import emotes, {
+    allTags,
+    isEmoteNewByDate,
+    topHotRanks
+  } from '$lib/stores/emotes';
   import { isAnimatedEmote } from '$lib/utils/format';
 
   export let filteredEmotes: Emote[] = [];
@@ -141,9 +145,11 @@
   // Filtrado y ordenamiento reactivo de emotes
   $: {
     const q = searchQuery.trim().toLowerCase();
+    const hotRanks = $topHotRanks;
+
     let result = $emotes.filter((e) => {
       // 1. Filtro por preset establecido
-      if (activePreset === 'hot' && !$topHotEmoteIds.has(e.id)) return false;
+      if (activePreset === 'hot' && !hotRanks.has(e.id)) return false;
       if (activePreset === 'new' && !isEmoteNewByDate(e.created_at)) return false;
       if (activePreset === 'animated' && !isAnimatedEmote(e)) return false;
       if (activePreset === 'static' && isAnimatedEmote(e)) return false;
@@ -177,13 +183,15 @@
       return true;
     });
 
-    // Si el filtro activo es "Más usados", ordenar por popularidad
     if (activePreset === 'hot') {
+      result = [...result].sort(
+        (a, b) => (hotRanks.get(a.id) ?? 999) - (hotRanks.get(b.id) ?? 999)
+      );
+    } else {
       result = [...result].sort((a, b) => {
-        const scoreA = (a.copy_count ?? 0) * 3 + (a.interaction_count ?? 0);
-        const scoreB = (b.copy_count ?? 0) * 3 + (b.interaction_count ?? 0);
-        if (scoreB !== scoreA) return scoreB - scoreA;
-        return (b.copy_count ?? 0) - (a.copy_count ?? 0);
+        const timeDiff = (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0);
+        if (timeDiff !== 0) return timeDiff;
+        return b.id - a.id;
       });
     }
 

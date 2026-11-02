@@ -99,7 +99,8 @@ pub fn ensure_db() -> Result<Connection, String> {
     }
     let conn = Connection::open(&db).map_err(|e| format!("{}: {}", e, db.display()))?;
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS emotes (
+        "PRAGMA foreign_keys = ON;
+        CREATE TABLE IF NOT EXISTS emotes (
             id INTEGER PRIMARY KEY,
             name TEXT,
             tag TEXT,
@@ -111,6 +112,14 @@ pub fn ensure_db() -> Result<Connection, String> {
             copy_count INTEGER DEFAULT 0,
             interaction_count INTEGER DEFAULT 0,
             last_used_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS emote_votes (
+            emote_id INTEGER PRIMARY KEY,
+            copy_count INTEGER NOT NULL DEFAULT 0,
+            interaction_count INTEGER NOT NULL DEFAULT 0,
+            score INTEGER NOT NULL DEFAULT 0,
+            last_used_at TEXT,
+            FOREIGN KEY (emote_id) REFERENCES emotes(id) ON DELETE CASCADE
         );
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -124,6 +133,27 @@ pub fn ensure_db() -> Result<Connection, String> {
     let _ = conn.execute("ALTER TABLE emotes ADD COLUMN last_used_at TEXT", []);
     let _ = conn.execute(
         "UPDATE emotes SET path = SUBSTR(path, 5) WHERE path LIKE '\\\\?\\%'",
+        [],
+    );
+
+    // Migrar datos históricos de copias desde emotes hacia la tabla dedicada emote_votes
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO emote_votes (emote_id, copy_count, interaction_count, score, last_used_at)
+         SELECT id,
+                COALESCE(copy_count, 0),
+                COALESCE(interaction_count, 0),
+                COALESCE(copy_count, 0),
+                last_used_at
+         FROM emotes
+         WHERE COALESCE(copy_count, 0) > 0 OR COALESCE(interaction_count, 0) > 0",
+        [],
+    );
+    let _ = conn.execute(
+        "UPDATE emote_votes SET score = copy_count WHERE score != copy_count",
+        [],
+    );
+    let _ = conn.execute(
+        "DELETE FROM emote_votes WHERE emote_id NOT IN (SELECT id FROM emotes)",
         [],
     );
 
