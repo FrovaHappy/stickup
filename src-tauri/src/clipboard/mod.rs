@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 pub enum ClipboardPayload {
     FilePath(PathBuf),
     RawImageBytes(Vec<u8>),
+    #[cfg(windows)]
     RgbaImage {
         rgba: Vec<u8>,
         width: u32,
@@ -110,12 +111,13 @@ pub fn copy_emote(
         final_format = "gif".to_string();
     } else {
         let img = image::open(p).map_err(|e| format!("Error cargando imagen: {}", e))?;
-        let processed =
-            if needs_resize && (img.width() != target_width || img.height() != target_height) {
-                image::imageops::resize(&img, target_width, target_height, FilterType::Lanczos3)
-            } else {
-                img.to_rgba8()
-            };
+        let processed = if needs_resize
+            && (img.width() != target_width || img.height() != target_height)
+        {
+            image::imageops::resize(&img, target_width, target_height, FilterType::Lanczos3)
+        } else {
+            img.to_rgba8()
+        };
 
         let (w, h) = (processed.width(), processed.height());
         #[cfg(windows)]
@@ -190,3 +192,4 @@ pub fn copy_emote(
         Ok(true)
     }
 }
+

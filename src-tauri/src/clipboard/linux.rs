@@ -1,6 +1,7 @@
 use super::ClipboardPayload;
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 pub fn copy_file_and_image_to_clipboard(
@@ -68,6 +69,34 @@ pub fn copy_file_and_image_to_clipboard(
 }
 
 pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
+    // 1. Archivo copiado como text/uri-list (Wayland / X11)
+    let uri_out = Command::new("wl-paste")
+        .args(["--type", "text/uri-list"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success() && !o.stdout.is_empty())
+        .or_else(|| {
+            Command::new("xclip")
+                .args(["-selection", "clipboard", "-t", "text/uri-list", "-o"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success() && !o.stdout.is_empty())
+        });
+
+    if let Some(out) = uri_out {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some(raw_path) = trimmed.strip_prefix("file://") {
+                let p = PathBuf::from(raw_path);
+                if p.exists() && p.is_file() {
+                    return Ok(ClipboardPayload::FilePath(p));
+                }
+            }
+        }
+    }
+
+    // 2. Bytes de imagen (Wayland / X11)
     for mime in ["image/gif", "image/webp", "image/png", "image/jpeg"] {
         if let Ok(out) = Command::new("wl-paste").args(["--type", mime]).output() {
             if out.status.success() && !out.stdout.is_empty() {
@@ -83,6 +112,28 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
             }
         }
     }
+
+    // 3. Texto plano con URL (Wayland / X11)
+    let text_out = Command::new("wl-paste")
+        .args(["--no-newline"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success() && !o.stdout.is_empty())
+        .or_else(|| {
+            Command::new("xclip")
+                .args(["-selection", "clipboard", "-o"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success() && !o.stdout.is_empty())
+        });
+
+    if let Some(out) = text_out {
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if text.starts_with("http://") || text.starts_with("https://") {
+            return Ok(ClipboardPayload::TextUrl(text));
+        }
+    }
+
     Err("El portapapeles no contiene una imagen compatible".to_string())
 }
 

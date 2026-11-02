@@ -504,6 +504,7 @@ pub fn import_from_clipboard(name: Option<String>) -> Result<Emote, String> {
             });
             save_raw_bytes_as_emote(&bytes, &final_name)
         }
+        #[cfg(windows)]
         ClipboardPayload::RgbaImage {
             rgba,
             width,
