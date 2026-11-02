@@ -14,16 +14,21 @@ on:
           - dev
         default: 'fix'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
 jobs:
   prepare:
-    name: Test & Bump Version
+    name: Validate & Bump Version
     runs-on: ubuntu-latest
     environment: release
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
       is_dev: ${{ steps.version.outputs.is_dev }}
 
@@ -40,21 +45,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
       - name: Enable Corepack
         run: corepack enable
 
@@ -64,14 +54,6 @@ jobs:
           node-version: '24'
           cache: 'pnpm'
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: 'src-tauri -> target'
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -80,12 +62,6 @@ jobs:
 
       - name: Run frontend tests
         run: npx vitest run
-
-      - name: Build frontend
-        run: pnpm run build
-
-      - name: Run backend Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Bump version and commit
         id: version
@@ -109,23 +85,29 @@ jobs:
           NEW_VERSION=$(node -p "require('./package.json').version")
           NEW_TAG="v$NEW_VERSION"
 
-          # Sincronizar versión con tauri.conf.json y Cargo.toml
+          # Sincronizar versión en tauri.conf.json, Cargo.toml y Cargo.lock sin compilar Rust aquí
           node -e '
             const fs = require("fs");
             const ver = process.argv[1];
 
             const tauriPath = "src-tauri/tauri.conf.json";
             const tauriConf = JSON.parse(fs.readFileSync(tauriPath, "utf8"));
-            tauriConf.version = ver;
+            // WiX (MSI en Windows) exige que el pre-release en tauri.conf.json sea solo numérico (ej. 0.1.1-2)
+            tauriConf.version = ver.replace(/-dev\.(\d+)$/, "-$1");
             fs.writeFileSync(tauriPath, JSON.stringify(tauriConf, null, 2) + "\n");
 
             const cargoPath = "src-tauri/Cargo.toml";
             let cargoToml = fs.readFileSync(cargoPath, "utf8");
             cargoToml = cargoToml.replace(/^version\s*=\s*"[^"]*"/m, `version = "${ver}"`);
             fs.writeFileSync(cargoPath, cargoToml);
-          ' "$NEW_VERSION"
 
-          cargo check --manifest-path src-tauri/Cargo.toml
+            const lockPath = "src-tauri/Cargo.lock";
+            if (fs.existsSync(lockPath)) {
+              let cargoLock = fs.readFileSync(lockPath, "utf8");
+              cargoLock = cargoLock.replace(/(name = "app"\r?\nversion = ")[^"]*(")/, `$1${ver}$2`);
+              fs.writeFileSync(lockPath, cargoLock);
+            }
+          ' "$NEW_VERSION"
 
           git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore(release): $NEW_VERSION"
@@ -133,6 +115,7 @@ jobs:
 
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag
         run: git push origin HEAD "${{ steps.version.outputs.tag }}"
@@ -161,14 +144,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.sha }}
           token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev \
             build-essential \
             curl \
@@ -196,18 +179,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'src-tauri -> target'
+          cache-on-failure: true
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run frontend tests
-        run: npx vitest run
-
-      - name: Build frontend
-        run: pnpm run build
-
-      - name: Run backend Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Run backend Rust tests (release profile shared with build)
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri application
         run: pnpm tauri build
@@ -226,12 +204,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -239,6 +211,6 @@ jobs:
           merge-multiple: true
 
       - name: Create GitHub Release
-        run: gh release create "${{ needs.prepare.outputs.tag }}" release-assets/* --generate-notes
+        run: gh release create "${{ needs.prepare.outputs.tag }}" release-assets/* --repo "${{ github.repository }}" --generate-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
