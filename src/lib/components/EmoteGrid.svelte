@@ -4,15 +4,51 @@
   import { createEventDispatcher } from 'svelte';
 
   export let emotes: Emote[] = [];
-  const dispatch = createEventDispatcher<{ select: Emote }>();
+  export let disabled = false;
+
+  const dispatch = createEventDispatcher<{
+    select: Emote;
+    copy: Emote;
+  }>();
+
+  let hoveredEmote: Emote | null = null;
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (disabled || !hoveredEmote) return;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.isContentEditable);
+      const selection = window.getSelection()?.toString();
+      if (isInput && selection && selection.length > 0) {
+        return;
+      }
+      e.preventDefault();
+      dispatch('copy', hoveredEmote);
+    }
+  }
 </script>
+
+<svelte:window on:keydown={handleKeyDown} />
 
 {#if emotes.length === 0}
   <div class="empty-state">No se encontraron emotes con los filtros actuales.</div>
 {:else}
   <div class="grid">
     {#each emotes as e (e.id)}
-      <EmoteCard {e} on:select={(ev) => dispatch('select', ev.detail)} />
+      <EmoteCard
+        {e}
+        on:select={(ev) => dispatch('select', ev.detail)}
+        on:hover={(ev) => (hoveredEmote = ev.detail)}
+        on:unhover={(ev) => {
+          if (hoveredEmote?.id === ev.detail.id) {
+            hoveredEmote = null;
+          }
+        }}
+      />
     {/each}
   </div>
 {/if}

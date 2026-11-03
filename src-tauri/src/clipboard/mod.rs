@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub enum ClipboardPayload {
-    FilePath(PathBuf),
+    LocalPaths(Vec<PathBuf>),
     RawImageBytes(Vec<u8>),
     #[cfg(windows)]
     RgbaImage {

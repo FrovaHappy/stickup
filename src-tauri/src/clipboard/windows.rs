@@ -152,24 +152,31 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
             return Err("No se pudo abrir el portapapeles de Windows".to_string());
         }
 
-        // 1. CF_HDROP: Archivo(s) copiado(s) desde el Explorador, Discord, Telegram, etc.
+        // 1. CF_HDROP: Archivo(s) o directorio(s) copiado(s) desde el Explorador de Windows
         if IsClipboardFormatAvailable(CF_HDROP) != 0 {
             let h_data = GetClipboardData(CF_HDROP);
             if !h_data.is_null() {
                 let h_drop = h_data as HDROP;
-                let len = DragQueryFileW(h_drop, 0, ptr::null_mut(), 0);
-                if len > 0 {
-                    let mut buf = vec![0u16; (len + 1) as usize];
-                    let copied = DragQueryFileW(h_drop, 0, buf.as_mut_ptr(), len + 1);
-                    if copied > 0 {
-                        buf.truncate(copied as usize);
-                        let path_str = String::from_utf16_lossy(&buf);
-                        let p = PathBuf::from(&path_str);
-                        if p.exists() && p.is_file() {
-                            CloseClipboard();
-                            return Ok(ClipboardPayload::FilePath(p));
+                let count = DragQueryFileW(h_drop, 0xFFFFFFFF, ptr::null_mut(), 0);
+                let mut paths = Vec::new();
+                for i in 0..count {
+                    let len = DragQueryFileW(h_drop, i, ptr::null_mut(), 0);
+                    if len > 0 {
+                        let mut buf = vec![0u16; (len + 1) as usize];
+                        let copied = DragQueryFileW(h_drop, i, buf.as_mut_ptr(), len + 1);
+                        if copied > 0 {
+                            buf.truncate(copied as usize);
+                            let path_str = String::from_utf16_lossy(&buf);
+                            let p = PathBuf::from(&path_str);
+                            if p.exists() {
+                                paths.push(p);
+                            }
                         }
                     }
+                }
+                if !paths.is_empty() {
+                    CloseClipboard();
+                    return Ok(ClipboardPayload::LocalPaths(paths));
                 }
             }
         }
@@ -287,7 +294,7 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
             }
         }
 
-        // 4. CF_UNICODETEXT: URL copiada en el portapapeles
+        // 4. CF_UNICODETEXT: URL o ruta de directorio/archivo en el portapapeles
         if IsClipboardFormatAvailable(CF_UNICODETEXT) != 0 {
             let h_text = GetClipboardData(CF_UNICODETEXT);
             if !h_text.is_null() {
@@ -299,9 +306,35 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
                     let end = slice.iter().position(|&c| c == 0).unwrap_or(max_u16);
                     let text = String::from_utf16_lossy(&slice[..end]).trim().to_string();
                     GlobalUnlock(h_text);
+
+                    // A) URL web
                     if text.starts_with("http://") || text.starts_with("https://") {
                         CloseClipboard();
                         return Ok(ClipboardPayload::TextUrl(text));
+                    }
+
+                    // B) Directorio o archivo local del PC
+                    let clean = text.trim_matches('"').trim_matches('\'').trim();
+                    let p = PathBuf::from(clean);
+                    if p.exists() {
+                        CloseClipboard();
+                        return Ok(ClipboardPayload::LocalPaths(vec![p]));
+                    }
+
+                    // C) Múltiples líneas de rutas locales
+                    let mut text_paths = Vec::new();
+                    for line in text.lines() {
+                        let l = line.trim().trim_matches('"').trim_matches('\'').trim();
+                        if !l.is_empty() {
+                            let lp = PathBuf::from(l);
+                            if lp.exists() {
+                                text_paths.push(lp);
+                            }
+                        }
+                    }
+                    if !text_paths.is_empty() {
+                        CloseClipboard();
+                        return Ok(ClipboardPayload::LocalPaths(text_paths));
                     }
                 } else if !p_text.is_null() {
                     GlobalUnlock(h_text);
@@ -310,7 +343,7 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
         }
 
         CloseClipboard();
-        Err("El portapapeles no contiene una imagen ni una URL válida".to_string())
+        Err("El portapapeles no contiene una imagen, URL o ruta de archivo/directorio válida".to_string())
     }
 }
 

@@ -29,7 +29,7 @@
   let emoteName = '';
   let tagList: string[] = [];
   let copyFeedback = '';
-  let copyButtonText = 'Copy to Clipboard';
+  let copyButtonText = 'Copy to Clipboard (Ctrl+C)';
   let copyCount = 0;
   let interactionCount = 0;
   let initializedEmoteId: number | null = null;
@@ -177,11 +177,29 @@
       copyButtonText = '✓ ¡Copiado!';
       showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
       setTimeout(() => {
-        copyButtonText = 'Copy to Clipboard';
+        copyButtonText = 'Copy to Clipboard (Ctrl+C)';
       }, 2200);
     } catch (err: any) {
       showToast(`Error: ${err?.message || err}`);
-      copyButtonText = 'Copy to Clipboard';
+      copyButtonText = 'Copy to Clipboard (Ctrl+C)';
+    }
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+      const active = document.activeElement as HTMLElement | null;
+      const isTextInput =
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable);
+      const selection = window.getSelection()?.toString();
+      if (isTextInput && selection && selection.length > 0) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      copyImageToClipboard();
     }
   }
 
@@ -214,6 +232,8 @@
     }
   }
 </script>
+
+<svelte:window on:keydown={handleKeyDown} />
 
 {#if emote}
   <Modal open={true} title="INFO" maxWidth="440px" {onClose}>

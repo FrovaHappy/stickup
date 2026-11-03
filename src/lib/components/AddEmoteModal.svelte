@@ -22,6 +22,8 @@
   let customName = "";
   let statusMsg = "";
   let isError = false;
+  let lastPasteTimestamp = 0;
+  const PASTE_COOLDOWN_MS = 1200;
 
   let unlistenTauriDrop: (() => void) | null = null;
 
@@ -85,9 +87,14 @@
         );
       }
     } catch (err: any) {
+      if (typeof err === "string" && err.includes("ya está en curso")) {
+        return;
+      }
       showFeedback(`Error: ${err?.message || err}`, true);
     } finally {
-      isBusy = false;
+      setTimeout(() => {
+        isBusy = false;
+      }, 400);
     }
   }
 
@@ -134,20 +141,46 @@
   async function handlePasteClipboard() {
     if (isBusy) return;
     isBusy = true;
-    statusMsg = "Leyendo portapapeles...";
+    statusMsg = "Identificando contenido del portapapeles...";
     isError = false;
 
     try {
-      const created = await api.importFromClipboard(customName);
+      const result = await api.importFromClipboard(customName);
       customName = "";
       await loadEmotes();
-      showFeedback(
-        `✓ ¡Emote "${created.name}" (${created.format.toUpperCase()}) agregado desde el portapapeles!`,
-      );
+
+      const list: Emote[] = Array.isArray(result)
+        ? result
+        : result && typeof result === "object" && ("id" in result || "name" in result)
+        ? [result as Emote]
+        : [];
+
+      if (list.length === 1) {
+        const item = list[0];
+        const fmt = item?.format ? ` (${item.format.toUpperCase()})` : "";
+        const name = item?.name || "emote";
+        showFeedback(
+          `✓ ¡Emote "${name}"${fmt} agregado exitosamente!`,
+        );
+      } else if (list.length > 1) {
+        showFeedback(
+          `✓ ¡${list.length} emotes agregados exitosamente!`,
+        );
+      } else {
+        showFeedback(
+          "No se encontraron imágenes compatibles (.png, .jpg, .webp, .gif).",
+          true,
+        );
+      }
     } catch (err: any) {
+      if (typeof err === "string" && err.includes("ya está en curso")) {
+        return;
+      }
       showFeedback(`Error: ${err?.message || err}`, true);
     } finally {
-      isBusy = false;
+      setTimeout(() => {
+        isBusy = false;
+      }, 400);
     }
   }
 
@@ -163,13 +196,20 @@
       customName = "";
       showUrlInput = false;
       await loadEmotes();
+      const fmt = created?.format ? ` (${created.format.toUpperCase()})` : "";
+      const name = created?.name || "emote";
       showFeedback(
-        `✓ ¡Emote "${created.name}" (${created.format.toUpperCase()}) agregado desde URL!`,
+        `✓ ¡Emote "${name}"${fmt} agregado desde URL!`,
       );
     } catch (err: any) {
+      if (typeof err === "string" && err.includes("ya está en curso")) {
+        return;
+      }
       showFeedback(`Error: ${err?.message || err}`, true);
     } finally {
-      isBusy = false;
+      setTimeout(() => {
+        isBusy = false;
+      }, 400);
     }
   }
 
@@ -216,7 +256,34 @@
     }
   }
 
-  function handleGlobalPaste(e: ClipboardEvent) {
+  function handleGlobalKeyDown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
+      if (e.repeat) {
+        e.preventDefault();
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastPasteTimestamp < PASTE_COOLDOWN_MS || isBusy) {
+        e.preventDefault();
+        return;
+      }
+      lastPasteTimestamp = now;
+      e.preventDefault();
+      isOpen = true;
+      handlePasteClipboard();
+    }
+  }
+
+  async function handleGlobalPaste(e: ClipboardEvent) {
     const target = e.target as HTMLElement | null;
     if (
       target &&
@@ -226,18 +293,79 @@
     ) {
       return;
     }
+    const now = Date.now();
+    if (now - lastPasteTimestamp < PASTE_COOLDOWN_MS || isBusy) {
+      e.preventDefault();
+      return;
+    }
+    lastPasteTimestamp = now;
     e.preventDefault();
     isOpen = true;
-    handlePasteClipboard();
+
+    // Discriminar si el navegador entrega directamente archivos / blobs en el evento de paste
+    const dt = e.clipboardData;
+    if (dt && dt.files && dt.files.length > 0) {
+      const validFiles: File[] = [];
+      let hadUnsupported = false;
+      for (let i = 0; i < dt.files.length; i++) {
+        const file = dt.files[i];
+        const isSupported =
+          file.type.startsWith("image/") ||
+          /\.(png|jpe?g|gif|webp)$/i.test(file.name);
+        if (isSupported) {
+          validFiles.push(file);
+        } else {
+          hadUnsupported = true;
+        }
+      }
+
+      if (validFiles.length > 0) {
+        isBusy = true;
+        statusMsg = "Importando imagen pegada...";
+        isError = false;
+        try {
+          let count = 0;
+          for (const file of validFiles) {
+            const buf = await file.arrayBuffer();
+            const bytes = Array.from(new Uint8Array(buf));
+            const stem = file.name
+              ? file.name.replace(/\.[^/.]+$/, "")
+              : "clipboard";
+            await api.importRawBytes(bytes, stem || "clipboard");
+            count++;
+          }
+          await loadEmotes();
+          showFeedback(
+            `✓ ¡${count} ${count === 1 ? "emote agregado" : "emotes agregados"} desde el portapapeles!`,
+          );
+          return;
+        } catch (err: any) {
+          showFeedback(`Error: ${err?.message || err}`, true);
+          return;
+        } finally {
+          setTimeout(() => {
+            isBusy = false;
+          }, 400);
+        }
+      } else if (hadUnsupported) {
+        showFeedback(
+          "El archivo pegado no es compatible. Solo se admiten imágenes PNG, JPG, JPEG, GIF o WebP.",
+          true,
+        );
+        return;
+      }
+    }
+
+    await handlePasteClipboard();
   }
 </script>
 
-<svelte:window on:paste={handleGlobalPaste} />
+<svelte:window on:paste={handleGlobalPaste} on:keydown={handleGlobalKeyDown} />
 
 <Button
   variant="primary"
   on:click={() => (isOpen = true)}
-  title="Agregar emotes (Archivos, Carpeta, Portapapeles, URL o Drag & Drop)"
+  title="Agregar emotes (Archivos, Carpeta, Portapapeles con Ctrl+V, URL o Drag & Drop)"
 >
   <span class="plus-icon">+</span>
   <span>Agregar</span>
@@ -247,6 +375,7 @@
   <Dropzone
     bind:isDragging
     disabled={isBusy}
+    subtitle="Soporta archivos (.png, .jpg, .webp, .gif), carpetas, URL o portapapeles con Ctrl+V"
     ariaLabel="Zona para arrastrar y soltar emotes"
     on:drop={handleHtmlDrop}
   >
@@ -261,15 +390,6 @@
     </div>
 
     <div class="secondary-actions">
-      <Chip
-        pill
-        disabled={isBusy}
-        title="También puedes presionar Ctrl+V en cualquier momento"
-        on:click={handlePasteClipboard}
-      >
-        📋 Pegar Portapapeles (Ctrl+V)
-      </Chip>
-
       <Chip
         pill
         active={showUrlInput}

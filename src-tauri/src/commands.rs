@@ -13,6 +13,10 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+use std::time::Instant;
+
+static CLIPBOARD_LOCK: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn extract_stem(path: &Path) -> String {
     path.file_stem()
@@ -121,6 +125,16 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
 
     let guessed = image::guess_format(bytes)
         .map_err(|e| format!("El contenido no es una imagen válida: {}", e))?;
+
+    if !matches!(
+        guessed,
+        ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::Gif | ImageFormat::WebP
+    ) {
+        return Err(
+            "Formato de archivo no compatible. Solo se admiten imágenes PNG, JPG, JPEG, GIF y WEBP."
+                .to_string(),
+        );
+    }
 
     let mut is_animated_gif = false;
     let mut gif_dimensions: Option<(u32, u32)> = None;
@@ -799,6 +813,24 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
         return Err("La URL debe comenzar con http:// o https://".to_string());
     }
 
+    let url_without_query = clean_url.split('?').next().unwrap_or(clean_url);
+    if let Some(idx) = url_without_query.rfind('.') {
+        let ext = &url_without_query[idx + 1..];
+        if !ext.is_empty() && ext.len() <= 5 && !ext.contains('/') {
+            let ext_lower = ext.to_lowercase();
+            let known_non_images = [
+                "html", "htm", "php", "asp", "aspx", "js", "css", "pdf", "zip", "rar", "exe",
+                "mp4", "mp3", "json", "xml", "txt",
+            ];
+            if known_non_images.contains(&ext_lower.as_str()) {
+                return Err(format!(
+                    "La URL apunta a un archivo '{}' no compatible. Solo se admiten imágenes PNG, JPG, JPEG, GIF y WEBP.",
+                    ext_lower
+                ));
+            }
+        }
+    }
+
     let normalized_url = normalize_download_url(clean_url);
     let bytes = match download_url_bytes(&normalized_url) {
         Ok(b) if !b.is_empty() => b,
@@ -818,7 +850,18 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
 }
 
 #[tauri::command]
-pub fn import_from_clipboard(name: Option<String>) -> Result<Emote, String> {
+pub fn import_from_clipboard(name: Option<String>) -> Result<Vec<Emote>, String> {
+    {
+        let mut lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
+        let now = Instant::now();
+        if let Some(prev) = *lock {
+            if now.duration_since(prev).as_millis() < 800 {
+                return Err("Una importación del portapapeles ya está en curso".to_string());
+            }
+        }
+        *lock = Some(now);
+    }
+
     let custom_name = name
         .as_deref()
         .map(str::trim)
@@ -826,17 +869,67 @@ pub fn import_from_clipboard(name: Option<String>) -> Result<Emote, String> {
         .map(String::from);
 
     match clipboard::read_clipboard_payload()? {
-        ClipboardPayload::FilePath(path) => {
-            let bytes = fs::read(&path)
-                .map_err(|e| format!("No se pudo leer el archivo del portapapeles: {}", e))?;
-            let final_name = custom_name.unwrap_or_else(|| extract_stem(&path));
-            save_raw_bytes_as_emote(&bytes, &final_name)
+        ClipboardPayload::LocalPaths(paths) => {
+            let conn = ensure_db()?;
+            let dir = get_active_emotes_dir(&conn);
+            if !dir.exists() {
+                fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            }
+            let abs_dir = dir.canonicalize().unwrap_or(dir);
+            let mut created = Vec::new();
+            let mut had_unsupported = false;
+
+            for p in paths {
+                if !p.exists() {
+                    continue;
+                }
+                if p.is_dir() {
+                    let entries = fs::read_dir(&p).map_err(|e| e.to_string())?;
+                    for entry in entries.flatten() {
+                        let ep = entry.path();
+                        if ep.is_file() {
+                            if let Some(emote) = import_single_file(&conn, &abs_dir, &ep)? {
+                                created.push(emote);
+                            }
+                        }
+                    }
+                } else if p.is_file() {
+                    let ext = p
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+                        if let Some(emote) = import_single_file(&conn, &abs_dir, &p)? {
+                            created.push(emote);
+                        }
+                    } else {
+                        had_unsupported = true;
+                    }
+                }
+            }
+
+            if created.is_empty() {
+                if had_unsupported {
+                    return Err(
+                        "El archivo no es compatible. Solo se admiten archivos .png, .jpg, .jpeg, .gif y .webp"
+                            .to_string(),
+                    );
+                } else {
+                    return Err(
+                        "No se encontraron imágenes compatibles (.png, .jpg, .jpeg, .gif, .webp) en el directorio o ruta indicada"
+                            .to_string(),
+                    );
+                }
+            }
+            Ok(created)
         }
         ClipboardPayload::RawImageBytes(bytes) => {
             let final_name = custom_name.unwrap_or_else(|| {
                 format!("clipboard_{}", &uuid::Uuid::new_v4().to_string()[..6])
             });
-            save_raw_bytes_as_emote(&bytes, &final_name)
+            let emote = save_raw_bytes_as_emote(&bytes, &final_name)?;
+            Ok(vec![emote])
         }
         #[cfg(windows)]
         ClipboardPayload::RgbaImage {
@@ -854,9 +947,13 @@ pub fn import_from_clipboard(name: Option<String>) -> Result<Emote, String> {
             let final_name = custom_name.unwrap_or_else(|| {
                 format!("clipboard_{}", &uuid::Uuid::new_v4().to_string()[..6])
             });
-            save_raw_bytes_as_emote(&buf.into_inner(), &final_name)
+            let emote = save_raw_bytes_as_emote(&buf.into_inner(), &final_name)?;
+            Ok(vec![emote])
         }
-        ClipboardPayload::TextUrl(url) => import_from_url(url, custom_name),
+        ClipboardPayload::TextUrl(url) => {
+            let emote = import_from_url(url, custom_name)?;
+            Ok(vec![emote])
+        }
     }
 }
 

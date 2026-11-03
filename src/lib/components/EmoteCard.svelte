@@ -6,7 +6,11 @@
   import { createEventDispatcher } from 'svelte';
 
   export let e: Emote;
-  const dispatch = createEventDispatcher<{ select: Emote }>();
+  const dispatch = createEventDispatcher<{
+    select: Emote;
+    hover: Emote;
+    unhover: Emote;
+  }>();
 
   $: isNew = isEmoteNewByDate(e.created_at);
   $: hotRank = $topHotRanks.get(e.id) ?? null;
@@ -14,13 +18,21 @@
   $: cardHighlight = (isHot ? 'hot' : isNew ? 'new' : 'none') as 'hot' | 'new' | 'none';
 </script>
 
-<Card
-  interactive
-  highlight={cardHighlight}
-  padding="sm"
-  title={e.name}
-  on:click={() => dispatch('select', e)}
+<div
+  class="emote-card-wrapper"
+  on:mouseenter={() => dispatch('hover', e)}
+  on:mouseleave={() => dispatch('unhover', e)}
+  on:focusin={() => dispatch('hover', e)}
+  on:focusout={() => dispatch('unhover', e)}
+  role="presentation"
 >
+  <Card
+    interactive
+    highlight={cardHighlight}
+    padding="sm"
+    title={`${e.name} (Ctrl+C para copiar)`}
+    on:click={() => dispatch('select', e)}
+  >
   <div class="badges-container">
     {#if isHot}
       <Badge
@@ -78,8 +90,14 @@
   </div>
   <div class="meta">{e.name}</div>
 </Card>
+</div>
 
 <style>
+  .emote-card-wrapper {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
   .badges-container {
     position: absolute;
     top: 6px;

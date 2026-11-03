@@ -85,14 +85,18 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
 
     if let Some(out) = uri_out {
         let text = String::from_utf8_lossy(&out.stdout);
+        let mut paths = Vec::new();
         for line in text.lines() {
             let trimmed = line.trim();
             if let Some(raw_path) = trimmed.strip_prefix("file://") {
                 let p = PathBuf::from(raw_path);
-                if p.exists() && p.is_file() {
-                    return Ok(ClipboardPayload::FilePath(p));
+                if p.exists() {
+                    paths.push(p);
                 }
             }
+        }
+        if !paths.is_empty() {
+            return Ok(ClipboardPayload::LocalPaths(paths));
         }
     }
 
@@ -131,6 +135,11 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
         let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if text.starts_with("http://") || text.starts_with("https://") {
             return Ok(ClipboardPayload::TextUrl(text));
+        }
+        let clean = text.trim_matches('"').trim_matches('\'').trim();
+        let p = PathBuf::from(clean);
+        if p.exists() {
+            return Ok(ClipboardPayload::LocalPaths(vec![p]));
         }
     }
 
