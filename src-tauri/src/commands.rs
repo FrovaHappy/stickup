@@ -4,8 +4,9 @@ use crate::db::{
     set_active_db_dir, upgrade_legacy_db_in_dir, DB_FILE_NAME,
 };
 use crate::models::{Emote, ResyncStats};
-use image::codecs::gif::GifDecoder;
-use image::{AnimationDecoder, GenericImageView, ImageFormat};
+use image::codecs::gif::{GifDecoder, GifEncoder, Repeat};
+use image::codecs::webp::WebPDecoder;
+use image::{AnimationDecoder, Delay, Frame, GenericImageView, ImageDecoder, ImageFormat};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
@@ -37,6 +38,75 @@ fn insert_emote_record(
     Ok(conn.last_insert_rowid())
 }
 
+fn encode_animated_webp_to_gif_bytes(
+    bytes: &[u8],
+) -> Result<Option<(Vec<u8>, u32, u32)>, String> {
+    let decoder = WebPDecoder::new(Cursor::new(bytes))
+        .map_err(|e| format!("Error leyendo imagen WebP: {}", e))?;
+    if !decoder.has_animation() {
+        return Ok(None);
+    }
+
+    let (w, h) = decoder.dimensions();
+    let frames = decoder
+        .into_frames()
+        .collect_frames()
+        .map_err(|e| format!("Error decodificando fotogramas WebP: {}", e))?;
+
+    if frames.len() <= 1 {
+        return Ok(None);
+    }
+
+    let normalized_frames = frames.into_iter().map(|frame| {
+        let (numer, denom) = frame.delay().numer_denom_ms();
+        let delay_ms = numer / denom.max(1);
+        if delay_ms > 0 && delay_ms < 10 {
+            Frame::from_parts(
+                frame.into_buffer(),
+                0,
+                0,
+                Delay::from_numer_denom_ms(10, 1),
+            )
+        } else {
+            frame
+        }
+    });
+
+    let mut gif_bytes = Vec::new();
+    {
+        let mut encoder = GifEncoder::new_with_speed(&mut gif_bytes, 10);
+        encoder
+            .set_repeat(Repeat::Infinite)
+            .map_err(|e| format!("Error configurando animación GIF: {}", e))?;
+        encoder
+            .encode_frames(normalized_frames)
+            .map_err(|e| format!("Error convirtiendo WebP animado a GIF: {}", e))?;
+    }
+
+    Ok(Some((gif_bytes, w, h)))
+}
+
+fn normalize_download_url(url: &str) -> String {
+    let without_fragment = url.split('#').next().unwrap_or(url).trim();
+    let Some((base, query)) = without_fragment.split_once('?') else {
+        return without_fragment.to_string();
+    };
+
+    let kept_params: Vec<&str> = query
+        .split('&')
+        .filter(|param| {
+            let key = param.split('=').next().unwrap_or("").trim();
+            !key.is_empty() && !key.eq_ignore_ascii_case("size")
+        })
+        .collect();
+
+    if kept_params.is_empty() {
+        base.to_string()
+    } else {
+        format!("{}?{}", base, kept_params.join("&"))
+    }
+}
+
 fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, String> {
     if bytes.is_empty() {
         return Err("Los datos de la imagen están vacíos".to_string());
@@ -54,6 +124,7 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
 
     let mut is_animated_gif = false;
     let mut gif_dimensions: Option<(u32, u32)> = None;
+    let mut converted_webp_gif: Option<(Vec<u8>, u32, u32)> = None;
 
     if guessed == ImageFormat::Gif {
         if let Ok(decoder) = GifDecoder::new(Cursor::new(bytes)) {
@@ -66,9 +137,15 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
                 }
             }
         }
+    } else if guessed == ImageFormat::WebP {
+        converted_webp_gif = encode_animated_webp_to_gif_bytes(bytes)?;
     }
 
-    let target_ext = if is_animated_gif { "gif" } else { "webp" };
+    let target_ext = if is_animated_gif || converted_webp_gif.is_some() {
+        "gif"
+    } else {
+        "webp"
+    };
     let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
 
     let (w, h, format) = if is_animated_gif {
@@ -78,6 +155,9 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
                 .map(|i| i.dimensions())
                 .unwrap_or((0, 0))
         });
+        (w as i32, h as i32, "gif".to_string())
+    } else if let Some((gif_bytes, w, h)) = converted_webp_gif {
+        fs::write(&dest, &gif_bytes).map_err(|e| e.to_string())?;
         (w as i32, h as i32, "gif".to_string())
     } else if guessed == ImageFormat::WebP {
         let (w, h) = image::load_from_memory(bytes)
@@ -561,9 +641,10 @@ fn import_single_file(
         return Ok(None);
     }
 
-    // Detectar si es un GIF animado (>1 fotograma) para conservar su secuencia intacta
+    // Detectar si es un GIF animado (>1 fotograma) o WebP animado para conservar su secuencia como GIF
     let mut is_animated_gif = false;
     let mut gif_dimensions: Option<(u32, u32)> = None;
+    let mut converted_webp_gif: Option<(Vec<u8>, u32, u32)> = None;
     if orig_ext == "gif" {
         if let Ok(file) = fs::File::open(src) {
             if let Ok(decoder) = GifDecoder::new(std::io::BufReader::new(file)) {
@@ -578,9 +659,17 @@ fn import_single_file(
                 }
             }
         }
+    } else if orig_ext == "webp" {
+        if let Ok(bytes) = fs::read(src) {
+            converted_webp_gif = encode_animated_webp_to_gif_bytes(&bytes)?;
+        }
     }
 
-    let target_ext = if is_animated_gif { "gif" } else { "webp" };
+    let target_ext = if is_animated_gif || converted_webp_gif.is_some() {
+        "gif"
+    } else {
+        "webp"
+    };
     let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
 
     let (w, h, format) = if is_animated_gif {
@@ -588,6 +677,9 @@ fn import_single_file(
         let (w, h) = gif_dimensions.unwrap_or_else(|| {
             image::open(&dest).map(|i| i.dimensions()).unwrap_or((0, 0))
         });
+        (w as i32, h as i32, "gif".to_string())
+    } else if let Some((gif_bytes, w, h)) = converted_webp_gif {
+        fs::write(&dest, &gif_bytes).map_err(|e| e.to_string())?;
         (w as i32, h as i32, "gif".to_string())
     } else if orig_ext != "webp" {
         let img = image::open(src).map_err(|e| format!("Error abriendo {:?}: {}", src, e))?;
@@ -667,13 +759,7 @@ pub fn import_raw_bytes(bytes: Vec<u8>, name: Option<String>) -> Result<Emote, S
     save_raw_bytes_as_emote(&bytes, clean_name)
 }
 
-#[tauri::command]
-pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, String> {
-    let clean_url = url.trim();
-    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
-        return Err("La URL debe comenzar con http:// o https://".to_string());
-    }
-
+fn download_url_bytes(url: &str) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new("curl");
     cmd.args([
         "-L",
@@ -684,7 +770,7 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
         "25",
         "-A",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StickUp/1.0",
-        clean_url,
+        url,
     ]);
 
     #[cfg(windows)]
@@ -703,6 +789,24 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
         return Err(format!("Error al descargar la URL: {}", stderr.trim()));
     }
 
+    Ok(output.stdout)
+}
+
+#[tauri::command]
+pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, String> {
+    let clean_url = url.trim();
+    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
+        return Err("La URL debe comenzar con http:// o https://".to_string());
+    }
+
+    let normalized_url = normalize_download_url(clean_url);
+    let bytes = match download_url_bytes(&normalized_url) {
+        Ok(b) if !b.is_empty() => b,
+        Err(_) | Ok(_) if normalized_url != clean_url => download_url_bytes(clean_url)?,
+        Err(e) => return Err(e),
+        Ok(b) => b,
+    };
+
     let emote_name = name
         .as_deref()
         .map(str::trim)
@@ -710,7 +814,7 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
         .map(String::from)
         .unwrap_or_else(|| infer_name_from_url(clean_url));
 
-    save_raw_bytes_as_emote(&output.stdout, &emote_name)
+    save_raw_bytes_as_emote(&bytes, &emote_name)
 }
 
 #[tauri::command]
@@ -966,6 +1070,63 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
                     stats.added_to_db += 1;
                 }
             }
+        } else if ext == "webp" {
+            let mut converted_to_gif = false;
+            if let Ok(bytes) = fs::read(&entry_path) {
+                if let Ok(Some((gif_bytes, w, h))) = encode_animated_webp_to_gif_bytes(&bytes) {
+                    let mut dest_path = entry_path.with_extension("gif");
+                    if dest_path.exists() && dest_path != entry_path {
+                        dest_path = abs_dir.join(format!(
+                            "{}_{}.gif",
+                            extract_stem(&entry_path),
+                            &uuid::Uuid::new_v4().to_string()[..8]
+                        ));
+                    }
+                    if fs::write(&dest_path, &gif_bytes).is_ok() {
+                        converted_to_gif = true;
+                        let new_path_str = normalize_path(&dest_path);
+                        if dest_path != entry_path {
+                            let _ = fs::remove_file(&entry_path);
+                        }
+                        if let Some(&id) = existing_db.get(&orig_key) {
+                            let _ = conn.execute(
+                                "UPDATE emotes SET path = ?1, format = 'gif', original_width = ?2, original_height = ?3 WHERE id = ?4",
+                                params![new_path_str, w as i32, h as i32, id],
+                            );
+                            existing_db.remove(&orig_key);
+                            existing_db.insert(new_path_str.to_lowercase(), id);
+                        } else {
+                            let now = chrono::Utc::now().to_rfc3339();
+                            let _ = insert_emote_record(
+                                &conn,
+                                &extract_stem(&entry_path),
+                                &new_path_str,
+                                w as i32,
+                                h as i32,
+                                "gif",
+                                &now,
+                            );
+                            stats.added_to_db += 1;
+                        }
+                    }
+                }
+            }
+            if !converted_to_gif && !existing_db.contains_key(&orig_key) {
+                let (w, h) = image::open(&entry_path)
+                    .map(|i| i.dimensions())
+                    .unwrap_or((0, 0));
+                let now = chrono::Utc::now().to_rfc3339();
+                let _ = insert_emote_record(
+                    &conn,
+                    &extract_stem(&entry_path),
+                    &orig_path_str,
+                    w as i32,
+                    h as i32,
+                    &ext,
+                    &now,
+                );
+                stats.added_to_db += 1;
+            }
         } else if !existing_db.contains_key(&orig_key) {
             let (w, h) = image::open(&entry_path)
                 .map(|i| i.dimensions())
@@ -1039,5 +1200,118 @@ mod tests {
         )
         .expect("insert emote");
         assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn test_normalize_download_url_removes_default_size() {
+        assert_eq!(
+            normalize_download_url(
+                "https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=32&animated=true"
+            ),
+            "https://cdn.discordapp.com/emojis/1539337442191212695.webp?animated=true"
+        );
+        assert_eq!(
+            normalize_download_url(
+                "https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=32"
+            ),
+            "https://cdn.discordapp.com/emojis/1539337442191212695.webp"
+        );
+        assert_eq!(
+            normalize_download_url(
+                "https://cdn.discordapp.com/emojis/123.webp?quality=lossless&size=48&animated=true"
+            ),
+            "https://cdn.discordapp.com/emojis/123.webp?quality=lossless&animated=true"
+        );
+        assert_eq!(
+            normalize_download_url("https://example.com/emote.webp?v=1"),
+            "https://example.com/emote.webp?v=1"
+        );
+    }
+
+    fn build_minimal_animated_webp(width: u32, height: u32) -> Vec<u8> {
+        let mut frame1_webp = Cursor::new(Vec::new());
+        let img1 = image::RgbaImage::from_pixel(width, height, image::Rgba([255, 0, 0, 255]));
+        image::DynamicImage::ImageRgba8(img1)
+            .write_to(&mut frame1_webp, ImageFormat::WebP)
+            .unwrap();
+        let vp8l_1 = &frame1_webp.into_inner()[12..];
+
+        let mut frame2_webp = Cursor::new(Vec::new());
+        let img2 = image::RgbaImage::from_pixel(width, height, image::Rgba([0, 255, 0, 255]));
+        image::DynamicImage::ImageRgba8(img2)
+            .write_to(&mut frame2_webp, ImageFormat::WebP)
+            .unwrap();
+        let vp8l_2 = &frame2_webp.into_inner()[12..];
+
+        let make_anmf = |subchunk: &[u8]| -> Vec<u8> {
+            let payload_len = 16 + subchunk.len();
+            let mut chunk = Vec::with_capacity(8 + payload_len + (payload_len % 2));
+            chunk.extend_from_slice(b"ANMF");
+            chunk.extend_from_slice(&(payload_len as u32).to_le_bytes());
+            // X (3b), Y (3b)
+            chunk.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // w - 1 (3b), h - 1 (3b)
+            let w_m1 = (width - 1).to_le_bytes();
+            let h_m1 = (height - 1).to_le_bytes();
+            chunk.extend_from_slice(&[w_m1[0], w_m1[1], w_m1[2], h_m1[0], h_m1[1], h_m1[2]]);
+            // duration 50ms (3b) + flags (1b: disposal=0, blend=1 -> 0x02)
+            chunk.extend_from_slice(&[50, 0, 0, 0x02]);
+            chunk.extend_from_slice(subchunk);
+            if payload_len % 2 == 1 {
+                chunk.push(0);
+            }
+            chunk
+        };
+
+        let anmf1 = make_anmf(vp8l_1);
+        let anmf2 = make_anmf(vp8l_2);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(b"WEBP");
+        // VP8X chunk (10 bytes payload)
+        body.extend_from_slice(b"VP8X");
+        body.extend_from_slice(&10u32.to_le_bytes());
+        // flags: animation (0x02) | alpha (0x10) = 0x12
+        body.extend_from_slice(&[0x12, 0, 0, 0]);
+        let w_m1 = (width - 1).to_le_bytes();
+        let h_m1 = (height - 1).to_le_bytes();
+        body.extend_from_slice(&[w_m1[0], w_m1[1], w_m1[2], h_m1[0], h_m1[1], h_m1[2]]);
+
+        // ANIM chunk (6 bytes payload)
+        body.extend_from_slice(b"ANIM");
+        body.extend_from_slice(&6u32.to_le_bytes());
+        body.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+
+        body.extend_from_slice(&anmf1);
+        body.extend_from_slice(&anmf2);
+
+        let mut riff = Vec::with_capacity(8 + body.len());
+        riff.extend_from_slice(b"RIFF");
+        riff.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        riff.extend_from_slice(&body);
+        riff
+    }
+
+    #[test]
+    fn test_encode_animated_webp_to_gif_bytes() {
+        let anim_webp = build_minimal_animated_webp(16, 16);
+        let result = encode_animated_webp_to_gif_bytes(&anim_webp).expect("should decode webp");
+        let (gif_bytes, w, h) = result.expect("should detect animated webp");
+        assert_eq!((w, h), (16, 16));
+        assert_eq!(image::guess_format(&gif_bytes).unwrap(), ImageFormat::Gif);
+
+        let decoder = GifDecoder::new(Cursor::new(&gif_bytes)).expect("valid gif");
+        let frames = decoder.into_frames().collect_frames().expect("gif frames");
+        assert_eq!(frames.len(), 2);
+
+        // Static WebP should return Ok(None)
+        let mut static_webp = Cursor::new(Vec::new());
+        let static_img = image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 255, 255]));
+        image::DynamicImage::ImageRgba8(static_img)
+            .write_to(&mut static_webp, ImageFormat::WebP)
+            .unwrap();
+        let static_res =
+            encode_animated_webp_to_gif_bytes(&static_webp.into_inner()).expect("valid static webp");
+        assert!(static_res.is_none());
     }
 }
