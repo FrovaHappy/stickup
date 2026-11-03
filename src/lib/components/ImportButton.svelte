@@ -3,6 +3,7 @@
   import { loadEmotes } from '$lib/stores/emotes';
   import { formatFileSize } from '$lib/utils/format';
   import type { ResyncStats } from '$lib/types/emote';
+  import { Alert, Badge, Button, Card } from '$lib/components/system-ui';
   import AddEmoteModal from './AddEmoteModal.svelte';
 
   let resyncing = false;
@@ -37,57 +38,60 @@
   <div class="buttons-row">
     <AddEmoteModal />
 
-    <button
-      type="button"
-      class="action-btn secondary"
-      on:click={handleResync}
+    <Button
+      variant="success"
       disabled={resyncing}
+      on:click={handleResync}
       title="Escanea el directorio activo, convierte PNG/JPG a WebP eliminando originales y sincroniza la base de datos"
     >
       {resyncing ? '🔄 Resincronizando...' : '🔄 Resincronizar'}
-    </button>
+    </Button>
   </div>
 
   {#if statusMsg}
-    <div class="status-text">{statusMsg}</div>
+    <div class="status-box">
+      <Alert variant="error" dismissible on:close={() => (statusMsg = '')}>
+        {statusMsg}
+      </Alert>
+    </div>
   {/if}
 
   {#if resyncStats}
     <div class="stats-panel">
       <div class="stats-header">
         <span class="stats-title">📊 Resultado de la Resincronización</span>
-        <button
-          type="button"
-          class="stats-close"
+        <Button
+          variant="icon"
+          size="sm"
+          ariaLabel="Cerrar estadísticas"
           on:click={() => (resyncStats = null)}
-          aria-label="Cerrar estadísticas"
         >
           ✕
-        </button>
+        </Button>
       </div>
 
       <div class="stats-grid">
-        <div class="stat-item">
+        <Card padding="sm">
           <span class="stat-val">{resyncStats.scanned_files}</span>
           <span class="stat-label">Archivos escaneados</span>
-        </div>
+        </Card>
 
-        <div class="stat-item highlight">
+        <Card padding="sm" highlight="indigo">
           <span class="stat-val">{resyncStats.converted_to_webp}</span>
           <span class="stat-label">
             Convertidos a WebP ({resyncStats.png_converted} PNG, {resyncStats.jpg_converted} JPG)
           </span>
-        </div>
+        </Card>
 
-        <div class="stat-item">
+        <Card padding="sm">
           <span class="stat-val">+{resyncStats.added_to_db}</span>
           <span class="stat-label">Nuevos indexados</span>
-        </div>
+        </Card>
 
-        <div class="stat-item">
+        <Card padding="sm">
           <span class="stat-val">-{resyncStats.removed_missing_from_db}</span>
           <span class="stat-label">Huérfanos limpiados</span>
-        </div>
+        </Card>
       </div>
 
       {#if resyncStats.converted_to_webp > 0}
@@ -96,11 +100,11 @@
             Peso antes: <strong>{formatFileSize(resyncStats.bytes_before)}</strong> ➜ Después:
             <strong>{formatFileSize(resyncStats.bytes_after)}</strong>
           </span>
-          <span class="savings-badge {resyncStats.saved_bytes >= 0 ? 'positive' : 'negative'}">
+          <Badge variant={resyncStats.saved_bytes >= 0 ? 'green' : 'amber'}>
             {resyncStats.saved_bytes >= 0
               ? `Ahorro: ${formatFileSize(resyncStats.saved_bytes)} (-${savingsPercent}%)`
               : `Diferencia: +${formatFileSize(Math.abs(resyncStats.saved_bytes))}`}
-          </span>
+          </Badge>
         </div>
       {/if}
     </div>
@@ -123,34 +127,9 @@
     justify-content: center;
     align-items: center;
   }
-  .action-btn.secondary {
-    background: rgba(16, 185, 129, 0.14);
-    color: #059669;
-    border: 1px solid rgba(16, 185, 129, 0.35);
-    border-radius: 10px;
-    padding: 9px 16px;
-    font-size: 13.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s ease, transform 0.1s ease;
-  }
-  .action-btn.secondary:hover:not(:disabled) {
-    background: rgba(16, 185, 129, 0.24);
-    transform: translateY(-1px);
-  }
-  @media (prefers-color-scheme: dark) {
-    .action-btn.secondary {
-      color: #10b981;
-    }
-  }
-  .action-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  .status-text {
-    font-size: 13px;
-    color: #ef4444;
-    min-height: 20px;
+  .status-box {
+    width: 100%;
+    max-width: 650px;
   }
   .stats-panel {
     background: rgba(30, 30, 34, 0.95);
@@ -178,37 +157,10 @@
     font-weight: 700;
     color: #e5e7eb;
   }
-  .stats-close {
-    background: transparent;
-    border: none;
-    color: #9ca3af;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-  .stats-close:hover {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.1);
-  }
   .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 10px;
-  }
-  .stat-item {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 8px;
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-  }
-  .stat-item.highlight {
-    background: rgba(99, 102, 241, 0.14);
-    border-color: rgba(99, 102, 241, 0.35);
   }
   .stat-val {
     font-size: 18px;
@@ -231,19 +183,5 @@
     border-radius: 8px;
     font-size: 12px;
     color: #d1d5db;
-  }
-  .savings-badge {
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-weight: 700;
-    font-size: 11px;
-  }
-  .savings-badge.positive {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-  }
-  .savings-badge.negative {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
   }
 </style>

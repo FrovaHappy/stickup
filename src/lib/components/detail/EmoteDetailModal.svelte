@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import type { Emote } from "$lib/types/emote";
-  import { api } from "$lib/services/api";
+  import { onMount } from 'svelte';
+  import type { Emote } from '$lib/types/emote';
+  import { api } from '$lib/services/api';
   import {
     loadEmotes,
     topHotRanks,
-    isEmoteNewByDate,
-  } from "$lib/stores/emotes";
+    isEmoteNewByDate
+  } from '$lib/stores/emotes';
   import {
     SIZE_PRESETS,
     formatFileSize,
@@ -14,21 +14,22 @@
     getMimeType,
     isAnimatedEmote,
     renderEmoteToCanvas,
-    resolveDimensions,
-  } from "$lib/utils/format";
-  import { convertFileSrc } from "@tauri-apps/api/core";
-  import TagManager from "./TagManager.svelte";
+    resolveDimensions
+  } from '$lib/utils/format';
+  import { Alert, Badge, Button, Chip, Input, Modal } from '$lib/components/system-ui';
+  import { convertFileSrc } from '@tauri-apps/api/core';
+  import TagManager from './TagManager.svelte';
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
 
-  let selectedSize = "original";
-  let selectedFormat = "webp";
+  let selectedSize = 'original';
+  let selectedFormat = 'webp';
 
-  let emoteName = "";
+  let emoteName = '';
   let tagList: string[] = [];
-  let copyFeedback = "";
-  let copyButtonText = "Copy to Clipboard";
+  let copyFeedback = '';
+  let copyButtonText = 'Copy to Clipboard';
   let copyCount = 0;
   let interactionCount = 0;
   let initializedEmoteId: number | null = null;
@@ -52,11 +53,11 @@
 
   $: if (emote && emote.id !== initializedEmoteId) {
     initializedEmoteId = emote.id;
-    emoteName = emote.name ?? "";
+    emoteName = emote.name ?? '';
     copyCount = emote.copy_count ?? 0;
     interactionCount = emote.interaction_count ?? 0;
-    tagList = (emote.tag ?? "")
-      .split(",")
+    tagList = (emote.tag ?? '')
+      .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
   }
@@ -64,7 +65,7 @@
   $: isAnimated = isAnimatedEmote(emote);
   $: availableFormats = getAvailableFormats(emote);
   $: if (emote && !availableFormats.includes(selectedFormat)) {
-    selectedFormat = isAnimated ? "gif" : "webp";
+    selectedFormat = isAnimated ? 'gif' : 'webp';
   }
 
   $: hotRank = emote ? ($topHotRanks.get(emote.id) ?? null) : null;
@@ -79,9 +80,7 @@
 
   $: sizeDiffPercent = (() => {
     if (!emote?.file_size || !newFileSize || emote.file_size <= 0) return null;
-    return Math.round(
-      ((newFileSize - emote.file_size) / emote.file_size) * 100,
-    );
+    return Math.round(((newFileSize - emote.file_size) / emote.file_size) * 100);
   })();
 
   $: resolutionDiffPercent = (() => {
@@ -95,14 +94,14 @@
   function showToast(msg: string) {
     copyFeedback = msg;
     setTimeout(() => {
-      copyFeedback = "";
+      copyFeedback = '';
     }, 2500);
   }
 
   async function persistMetadata(newName: string, newTags: string[]) {
     if (!emote) return;
     tagList = newTags;
-    const joinedTags = newTags.join(", ");
+    const joinedTags = newTags.join(', ');
     emote.name = newName;
     emote.tag = joinedTags;
     try {
@@ -121,8 +120,8 @@
   async function calculateNewSize() {
     if (!emote) return;
     if (
-      selectedSize === "original" &&
-      selectedFormat.toLowerCase() === (emote.format ?? "").toLowerCase()
+      selectedSize === 'original' &&
+      selectedFormat.toLowerCase() === (emote.format ?? '').toLowerCase()
     ) {
       newFileSize = emote.file_size ?? null;
       return;
@@ -133,7 +132,7 @@
       const canvas = await renderEmoteToCanvas(
         emote.path,
         targetDimensions.width,
-        targetDimensions.height,
+        targetDimensions.height
       );
       canvas.toBlob(
         (blob) => {
@@ -141,7 +140,7 @@
           isCalculatingSize = false;
         },
         getMimeType(selectedFormat),
-        0.9,
+        0.9
       );
     } catch {
       isCalculatingSize = false;
@@ -153,13 +152,13 @@
       await navigator.clipboard.writeText(text);
       showToast(`¡${label} copiado!`);
     } catch {
-      showToast("Error al copiar texto");
+      showToast('Error al copiar texto');
     }
   }
 
   async function copyImageToClipboard() {
     if (!emote) return;
-    copyButtonText = "Copiando...";
+    copyButtonText = 'Copiando...';
 
     try {
       const { width: targetW, height: targetH } = targetDimensions;
@@ -168,23 +167,21 @@
         emote.path,
         selectedFormat,
         targetW,
-        targetH,
+        targetH
       );
 
       copyCount += 1;
       emote.copy_count = copyCount;
       await loadEmotes();
 
-      copyButtonText = "✓ ¡Copiado!";
-      showToast(
-        `✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`,
-      );
+      copyButtonText = '✓ ¡Copiado!';
+      showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
       setTimeout(() => {
-        copyButtonText = "Copy to Clipboard";
+        copyButtonText = 'Copy to Clipboard';
       }, 2200);
     } catch (err: any) {
       showToast(`Error: ${err?.message || err}`);
-      copyButtonText = "Copy to Clipboard";
+      copyButtonText = 'Copy to Clipboard';
     }
   }
 
@@ -195,11 +192,11 @@
       const canvas = await renderEmoteToCanvas(emote.path, targetW, targetH);
       const dataUrl = canvas.toDataURL(getMimeType(selectedFormat), 0.95);
 
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = dataUrl;
       a.download = `${emoteName || emote.name}_${targetW}x${targetH}.${selectedFormat}`;
       a.click();
-      showToast("✓ Imagen descargada");
+      showToast('✓ Imagen descargada');
     } catch (e: any) {
       showToast(`Error al descargar: ${e?.message || e}`);
     }
@@ -216,356 +213,228 @@
       }
     }
   }
-
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      onClose();
-    }
-  }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
-
 {#if emote}
-  <div
-    class="modal-backdrop"
-    on:click={handleBackdropClick}
-    role="presentation"
-  >
-    <div class="modal-card">
-      <div class="modal-header">
-        <h2 class="modal-title">INFO</h2>
-        <button
-          type="button"
-          class="close-btn"
-          on:click={onClose}
-          aria-label="Cerrar modal"
+  <Modal open={true} title="INFO" maxWidth="440px" {onClose}>
+    <div class="top-row">
+      <div class="preview-box">
+        <img
+          src={convertFileSrc(emote.path)}
+          alt={emote.name}
+          class="preview-img"
+        />
+      </div>
+
+      <div class="fields-col">
+        <Input
+          label="Name"
+          bind:value={emoteName}
+          placeholder="Nombre del emote"
+          on:blur={handleNameBlur}
         >
-          ✕
-        </button>
-      </div>
-
-      <div class="top-row">
-        <div class="preview-box">
-          <img
-            src={convertFileSrc(emote.path)}
-            alt={emote.name}
-            class="preview-img"
-          />
-        </div>
-
-        <div class="fields-col">
-          <div class="field-group">
-            <span class="field-label">Name</span>
-            <div class="input-with-action">
-              <input
-                type="text"
-                bind:value={emoteName}
-                on:blur={handleNameBlur}
-                placeholder="Nombre del emote"
-                class="field-input"
-              />
-              <button
-                type="button"
-                class="copy-icon-btn"
-                title="Copiar nombre"
-                on:click={() => copyText(emoteName, "Nombre")}
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path
-                    d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                  ></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="field-group">
-            <span class="field-label">Link</span>
-            <div class="input-with-action">
-              <input
-                type="text"
-                readonly
-                value={emote.path}
-                title={emote.path}
-                class="field-input readonly"
-              />
-              <button
-                type="button"
-                class="copy-icon-btn"
-                title="Copiar ruta"
-                on:click={() => copyText(emote.path, "Ruta")}
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path
-                    d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                  ></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="options-section">
-        <div class="options-label">Tamaño / Dimensiones:</div>
-        <div class="pills-row">
-          {#each SIZE_PRESETS as preset}
-            <button
-              type="button"
-              class="pill-btn {selectedSize === preset.value ? 'active' : ''}"
-              on:click={() => (selectedSize = preset.value)}
+          <Button
+            slot="trailing"
+            variant="icon"
+            size="sm"
+            title="Copiar nombre"
+            on:click={() => copyText(emoteName, 'Nombre')}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
             >
-              {preset.label}
-            </button>
-          {/each}
-        </div>
-      </div>
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </Button>
+        </Input>
 
-      <div class="options-section">
-        <div class="options-label">
-          Formato a copiar (Default: {isAnimated ? "GIF" : "WebP"}):
-        </div>
-        <div class="pills-row">
-          {#each availableFormats as fmt}
-            <button
-              type="button"
-              class="pill-btn {selectedFormat === fmt ? 'active' : ''}"
-              on:click={() => (selectedFormat = fmt)}
-            >
-              {fmt.toUpperCase()}
-            </button>
-          {/each}
-        </div>
-      </div>
-
-      <button
-        type="button"
-        class="copy-cta-btn"
-        on:click={copyImageToClipboard}
-      >
-        {copyButtonText}
-      </button>
-
-      <div class="meta-section">
-        <div class="meta-line">
-          <span class="meta-key">Resolución:</span>
-          <div class="meta-comparison">
-            {#if selectedSize === "original" || (emote.original_width === targetDimensions.width && emote.original_height === targetDimensions.height)}
-              <span class="meta-value bold"
-                >{emote.original_width}×{emote.original_height} px</span
-              >
-              <span class="diff-badge gray">Original</span>
-            {:else}
-              <span class="meta-value muted"
-                >{emote.original_width}×{emote.original_height} px</span
-              >
-              <span class="arrow-sep">➜</span>
-              <span class="meta-value bold highlight"
-                >{targetDimensions.width}×{targetDimensions.height} px</span
-              >
-              {#if resolutionDiffPercent !== null}
-                <span class="diff-badge blue">{resolutionDiffPercent}% px</span>
-              {/if}
-            {/if}
-          </div>
-        </div>
-
-        <div class="meta-line">
-          <span class="meta-key">Peso:</span>
-          <div class="meta-comparison">
-            {#if isCalculatingSize}
-              <span class="meta-value muted">Calculando...</span>
-            {:else if newFileSize !== null && emote.file_size && emote.file_size !== newFileSize}
-              <span class="meta-value muted"
-                >{formatFileSize(emote.file_size)}</span
-              >
-              <span class="arrow-sep">➜</span>
-              <span class="meta-value bold highlight"
-                >{formatFileSize(newFileSize)}</span
-              >
-              {#if sizeDiffPercent !== null}
-                <span
-                  class="diff-badge {sizeDiffPercent < 0 ? 'green' : 'amber'}"
-                >
-                  {sizeDiffPercent < 0
-                    ? `-${Math.abs(sizeDiffPercent)}%`
-                    : `+${sizeDiffPercent}%`}
-                </span>
-              {/if}
-            {:else}
-              <span class="meta-value bold"
-                >{formatFileSize(newFileSize ?? emote.file_size)}</span
-              >
-              {#if selectedSize === "original"}
-                <span class="diff-badge gray">Original</span>
-              {/if}
-            {/if}
-          </div>
-        </div>
-
-        <div class="meta-line">
-          <span class="meta-key">Type:</span>
-          <div class="meta-comparison">
-            {#if emote.format && selectedFormat.toUpperCase() !== emote.format.toUpperCase()}
-              <span class="meta-value muted">{emote.format.toUpperCase()}</span>
-              <span class="arrow-sep">➜</span>
-              <span class="meta-value bold highlight"
-                >{selectedFormat.toUpperCase()}</span
-              >
-            {:else}
-              <span class="meta-value bold">{selectedFormat.toUpperCase()}</span
-              >
-            {/if}
-          </div>
-        </div>
-
-        <div class="meta-line">
-          <span class="meta-key">Estadísticas:</span>
-          <div class="meta-comparison">
-            <span class="diff-badge blue"
-              >📋 {copyCount} {copyCount === 1 ? "copia" : "copias"}</span
-            >
-            <span class="diff-badge gray"
-              >👆 {interactionCount}
-              {interactionCount === 1 ? "interacción" : "interacciones"}</span
-            >
-            {#if isHot}
-              <span class="diff-badge amber">🔥 Top #{hotRank}</span>
-            {/if}
-            {#if isNew}
-              <span class="diff-badge green">🍃 Nuevo</span>
-            {/if}
-          </div>
-        </div>
-
-        <div class="meta-line">
-          <span class="meta-key">Creado:</span>
-          <div class="meta-comparison">
-            <span class="meta-value"
-              >{new Date(emote.created_at).toLocaleString()}</span
-            >
-          </div>
-        </div>
-      </div>
-
-      <TagManager
-        {tagList}
-        onChange={(newTags) => persistMetadata(emoteName, newTags)}
-      />
-
-      <div class="modal-footer">
-        <button
-          type="button"
-          class="secondary-action-btn"
-          on:click={downloadResizedImage}
+        <Input
+          label="Link"
+          readonly
+          value={emote.path}
+          title={emote.path}
         >
-          💾 Descargar copia
-        </button>
-        <button type="button" class="danger-action-btn" on:click={handleDelete}>
-          🗑️ Eliminar
-        </button>
+          <Button
+            slot="trailing"
+            variant="icon"
+            size="sm"
+            title="Copiar ruta"
+            on:click={() => copyText(emote?.path ?? '', 'Ruta')}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </Button>
+        </Input>
       </div>
-
-      {#if copyFeedback}
-        <div class="toast-popup">{copyFeedback}</div>
-      {/if}
     </div>
-  </div>
+
+    <div class="options-section">
+      <div class="options-label">Tamaño / Dimensiones:</div>
+      <div class="pills-row">
+        {#each SIZE_PRESETS as preset}
+          <Chip
+            active={selectedSize === preset.value}
+            on:click={() => (selectedSize = preset.value)}
+          >
+            {preset.label}
+          </Chip>
+        {/each}
+      </div>
+    </div>
+
+    <div class="options-section">
+      <div class="options-label">
+        Formato a copiar (Default: {isAnimated ? 'GIF' : 'WebP'}):
+      </div>
+      <div class="pills-row">
+        {#each availableFormats as fmt}
+          <Chip
+            active={selectedFormat === fmt}
+            on:click={() => (selectedFormat = fmt)}
+          >
+            {fmt.toUpperCase()}
+          </Chip>
+        {/each}
+      </div>
+    </div>
+
+    <Button
+      variant="accent"
+      size="lg"
+      fullWidth
+      on:click={copyImageToClipboard}
+    >
+      {copyButtonText}
+    </Button>
+
+    <div class="meta-section">
+      <div class="meta-line">
+        <span class="meta-key">Resolución:</span>
+        <div class="meta-comparison">
+          {#if selectedSize === 'original' || (emote.original_width === targetDimensions.width && emote.original_height === targetDimensions.height)}
+            <span class="meta-value bold">
+              {emote.original_width}×{emote.original_height} px
+            </span>
+            <Badge variant="gray">Original</Badge>
+          {:else}
+            <span class="meta-value muted">
+              {emote.original_width}×{emote.original_height} px
+            </span>
+            <span class="arrow-sep">➜</span>
+            <span class="meta-value bold highlight">
+              {targetDimensions.width}×{targetDimensions.height} px
+            </span>
+            {#if resolutionDiffPercent !== null}
+              <Badge variant="blue">{resolutionDiffPercent}% px</Badge>
+            {/if}
+          {/if}
+        </div>
+      </div>
+
+      <div class="meta-line">
+        <span class="meta-key">Peso:</span>
+        <div class="meta-comparison">
+          {#if isCalculatingSize}
+            <span class="meta-value muted">Calculando...</span>
+          {:else if newFileSize !== null && emote.file_size && emote.file_size !== newFileSize}
+            <span class="meta-value muted">{formatFileSize(emote.file_size)}</span>
+            <span class="arrow-sep">➜</span>
+            <span class="meta-value bold highlight">{formatFileSize(newFileSize)}</span>
+            {#if sizeDiffPercent !== null}
+              <Badge variant={sizeDiffPercent < 0 ? 'green' : 'amber'}>
+                {sizeDiffPercent < 0
+                  ? `-${Math.abs(sizeDiffPercent)}%`
+                  : `+${sizeDiffPercent}%`}
+              </Badge>
+            {/if}
+          {:else}
+            <span class="meta-value bold">
+              {formatFileSize(newFileSize ?? emote.file_size)}
+            </span>
+            {#if selectedSize === 'original'}
+              <Badge variant="gray">Original</Badge>
+            {/if}
+          {/if}
+        </div>
+      </div>
+
+      <div class="meta-line">
+        <span class="meta-key">Type:</span>
+        <div class="meta-comparison">
+          {#if emote.format && selectedFormat.toUpperCase() !== emote.format.toUpperCase()}
+            <span class="meta-value muted">{emote.format.toUpperCase()}</span>
+            <span class="arrow-sep">➜</span>
+            <span class="meta-value bold highlight">{selectedFormat.toUpperCase()}</span>
+          {:else}
+            <span class="meta-value bold">{selectedFormat.toUpperCase()}</span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="meta-line">
+        <span class="meta-key">Estadísticas:</span>
+        <div class="meta-comparison">
+          <Badge variant="blue">
+            📋 {copyCount} {copyCount === 1 ? 'copia' : 'copias'}
+          </Badge>
+          <Badge variant="gray">
+            👆 {interactionCount} {interactionCount === 1 ? 'interacción' : 'interacciones'}
+          </Badge>
+          {#if isHot}
+            <Badge variant="amber">🔥 Top #{hotRank}</Badge>
+          {/if}
+          {#if isNew}
+            <Badge variant="green">🍃 Nuevo</Badge>
+          {/if}
+        </div>
+      </div>
+
+      <div class="meta-line">
+        <span class="meta-key">Creado:</span>
+        <div class="meta-comparison">
+          <span class="meta-value">
+            {new Date(emote.created_at).toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <TagManager
+      {tagList}
+      onChange={(newTags) => persistMetadata(emoteName, newTags)}
+    />
+
+    <svelte:fragment slot="footer">
+      <Button variant="outline" size="sm" on:click={downloadResizedImage}>
+        💾 Descargar copia
+      </Button>
+      <Button variant="danger" size="sm" on:click={handleDelete}>
+        🗑️ Eliminar
+      </Button>
+    </svelte:fragment>
+
+    {#if copyFeedback}
+      <Alert variant="toast">{copyFeedback}</Alert>
+    {/if}
+  </Modal>
 {/if}
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 16px;
-    animation: fadeIn 0.15s ease-out;
-  }
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  .modal-card {
-    background: #1e1e20;
-    color: #f3f4f6;
-    border-radius: 16px;
-    width: 100%;
-    max-width: 440px;
-    padding: 24px;
-    box-shadow:
-      0 20px 40px rgba(0, 0, 0, 0.6),
-      0 0 0 1px rgba(255, 255, 255, 0.08);
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    position: relative;
-    max-height: 90vh;
-    overflow-y: auto;
-  }
-  .modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .modal-title {
-    font-size: 18px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    margin: 0;
-    color: #ffffff;
-  }
-  .close-btn {
-    background: transparent;
-    border: none;
-    color: #facc15;
-    font-size: 22px;
-    font-weight: bold;
-    cursor: pointer;
-    line-height: 1;
-    padding: 4px;
-    transition:
-      transform 0.15s ease,
-      color 0.15s ease;
-  }
-  .close-btn:hover {
-    transform: scale(1.15) rotate(90deg);
-    color: #fef08a;
-  }
   .top-row {
     display: flex;
     gap: 16px;
@@ -597,60 +466,6 @@
     flex: 1;
     min-width: 0;
   }
-  .field-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    text-align: left;
-  }
-  .field-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #9ca3af;
-  }
-  .input-with-action {
-    display: flex;
-    align-items: center;
-    background: #2b2b2f;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    overflow: hidden;
-    transition: border-color 0.15s;
-  }
-  .input-with-action:focus-within {
-    border-color: #6366f1;
-  }
-  .field-input {
-    background: transparent;
-    border: none;
-    color: #f3f4f6;
-    padding: 8px 10px;
-    font-size: 13px;
-    flex: 1;
-    min-width: 0;
-    outline: none;
-  }
-  .field-input.readonly {
-    color: #9ca3af;
-    cursor: default;
-  }
-  .copy-icon-btn {
-    background: transparent;
-    border: none;
-    color: #9ca3af;
-    padding: 8px 10px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-      color 0.15s ease,
-      background 0.15s ease;
-  }
-  .copy-icon-btn:hover {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.08);
-  }
   .options-section {
     display: flex;
     flex-direction: column;
@@ -666,50 +481,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-  }
-  .pill-btn {
-    background: #2b2b2f;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #d1d5db;
-    padding: 5px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .pill-btn:hover {
-    background: #374151;
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-  .pill-btn.active {
-    background: #4f46e5;
-    border-color: #6366f1;
-    color: #ffffff;
-    box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
-  }
-  .copy-cta-btn {
-    background: #facc15;
-    color: #111827;
-    border: none;
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 15px;
-    font-weight: 700;
-    cursor: pointer;
-    transition:
-      background 0.15s ease,
-      transform 0.1s ease,
-      box-shadow 0.15s ease;
-    box-shadow: 0 4px 14px rgba(250, 204, 21, 0.3);
-    margin-top: 4px;
-  }
-  .copy-cta-btn:hover {
-    background: #eab308;
-    box-shadow: 0 6px 18px rgba(250, 204, 21, 0.4);
-  }
-  .copy-cta-btn:active {
-    transform: scale(0.98);
   }
   .meta-section {
     display: flex;
@@ -742,7 +513,7 @@
     font-size: 11px;
   }
   .meta-value {
-    color: #e5e7eb;
+    color: inherit;
   }
   .meta-value.bold {
     font-weight: 700;
@@ -755,90 +526,5 @@
   }
   .meta-value.highlight {
     color: #facc15;
-  }
-  .diff-badge {
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1.4;
-  }
-  .diff-badge.green {
-    background: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-  }
-  .diff-badge.blue {
-    background: rgba(99, 102, 241, 0.2);
-    color: #818cf8;
-  }
-  .diff-badge.amber {
-    background: rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-  }
-  .diff-badge.gray {
-    background: rgba(156, 163, 175, 0.15);
-    color: #9ca3af;
-  }
-  .modal-footer {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 4px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    padding-top: 12px;
-  }
-  .secondary-action-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #d1d5db;
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .secondary-action-btn:hover {
-    background: rgba(255, 255, 255, 0.06);
-    color: #ffffff;
-  }
-  .danger-action-btn {
-    background: transparent;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #f87171;
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .danger-action-btn:hover {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-  }
-  .toast-popup {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #10b981;
-    color: #ffffff;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 16px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    animation: toastIn 0.2s ease-out;
-  }
-  @keyframes toastIn {
-    from {
-      opacity: 0;
-      transform: translate(-50%, 10px);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
   }
 </style>

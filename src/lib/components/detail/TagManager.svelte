@@ -1,5 +1,6 @@
 <script lang="ts">
   import { allTags } from '$lib/stores/emotes';
+  import { Chip, Dropdown } from '$lib/components/system-ui';
 
   export let tagList: string[] = [];
   export let onChange: (newTags: string[]) => void;
@@ -57,17 +58,14 @@
       role="presentation"
     >
       {#each tagList as t}
-        <span class="tag-badge">
-          <span class="tag-badge-text">{t}</span>
-          <button
-            type="button"
-            class="tag-badge-remove"
-            title="Eliminar tag"
-            on:click|stopPropagation={() => removeTag(t)}
-          >
-            ✕
-          </button>
-        </span>
+        <Chip
+          variant="indigo"
+          removable
+          removeTitle="Eliminar tag"
+          on:remove={() => removeTag(t)}
+        >
+          {t}
+        </Chip>
       {/each}
 
       <input
@@ -81,35 +79,29 @@
       />
     </div>
 
-    {#if showSuggestions && suggestedTags.length > 0}
-      <div
-        class="dropdown-backdrop"
-        on:click|stopPropagation={() => (showSuggestions = false)}
-        role="presentation"
-      ></div>
-
-      <div class="tag-dropdown">
-        <div class="tag-dropdown-header">
-          <span class="dropdown-header-title">🏷️ Tags globales existentes</span>
-          <span class="dropdown-header-count">{suggestedTags.length} disponibles</span>
-        </div>
-        <div class="tag-dropdown-list">
-          {#each suggestedTags as st}
-            <button
-              type="button"
-              class="tag-dropdown-item"
-              on:click|stopPropagation={() => {
-                addTag(st);
-                inputEl?.focus();
-              }}
-            >
-              <span class="tag-item-name">{st}</span>
-              <span class="tag-item-action">+ Agregar</span>
-            </button>
-          {/each}
-        </div>
+    <Dropdown
+      open={showSuggestions && suggestedTags.length > 0}
+      title="🏷️ Tags globales existentes"
+      subtitle="{suggestedTags.length} disponibles"
+      maxHeight="200px"
+      on:close={() => (showSuggestions = false)}
+    >
+      <div class="tag-dropdown-list">
+        {#each suggestedTags as st}
+          <button
+            type="button"
+            class="tag-dropdown-item"
+            on:click|stopPropagation={() => {
+              addTag(st);
+              inputEl?.focus();
+            }}
+          >
+            <span class="tag-item-name">{st}</span>
+            <span class="tag-item-action">+ Agregar</span>
+          </button>
+        {/each}
       </div>
-    {/if}
+    </Dropdown>
   </div>
 </div>
 
@@ -161,51 +153,6 @@
     border-color: #6366f1;
     box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
   }
-  .tag-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: rgba(99, 102, 241, 0.18);
-    border: 1px solid rgba(99, 102, 241, 0.4);
-    color: #c7d2fe;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 3px 8px;
-    border-radius: 6px;
-    animation: tagAppear 0.12s ease-out;
-  }
-  @keyframes tagAppear {
-    from {
-      opacity: 0;
-      transform: scale(0.92);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  .tag-badge-text {
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-  .tag-badge-remove {
-    background: transparent;
-    border: none;
-    color: #a5b4fc;
-    font-size: 11px;
-    line-height: 1;
-    padding: 0 1px;
-    cursor: pointer;
-    border-radius: 3px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s, color 0.15s;
-  }
-  .tag-badge-remove:hover {
-    background: rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
-  }
   .tag-inline-input {
     flex: 1;
     min-width: 100px;
@@ -219,48 +166,7 @@
   .tag-inline-input::placeholder {
     color: #6b7280;
   }
-  .dropdown-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1050;
-  }
-  .tag-dropdown {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    right: 0;
-    background: #232326;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
-    z-index: 1100;
-    max-height: 200px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .tag-dropdown-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    font-size: 11px;
-    color: #9ca3af;
-    font-weight: 600;
-  }
-  .dropdown-header-count {
-    color: #6b7280;
-    font-size: 10px;
-  }
   .tag-dropdown-list {
-    overflow-y: auto;
-    max-height: 160px;
-    padding: 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -274,7 +180,7 @@
     background: transparent;
     border: none;
     border-radius: 6px;
-    color: #e5e7eb;
+    color: inherit;
     font-size: 13px;
     cursor: pointer;
     text-align: left;
@@ -282,7 +188,6 @@
   }
   .tag-dropdown-item:hover {
     background: rgba(99, 102, 241, 0.18);
-    color: #ffffff;
   }
   .tag-item-name {
     font-weight: 500;
@@ -293,4 +198,3 @@
     font-weight: 600;
   }
 </style>
-

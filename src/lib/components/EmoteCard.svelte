@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Emote } from '$lib/types/emote';
   import { isEmoteNewByDate, topHotRanks } from '$lib/stores/emotes';
+  import { Badge, Card } from '$lib/components/system-ui';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { createEventDispatcher } from 'svelte';
 
@@ -10,18 +11,22 @@
   $: isNew = isEmoteNewByDate(e.created_at);
   $: hotRank = $topHotRanks.get(e.id) ?? null;
   $: isHot = hotRank !== null;
+  $: cardHighlight = (isHot ? 'hot' : isNew ? 'new' : 'none') as 'hot' | 'new' | 'none';
 </script>
 
-<button
-  type="button"
-  class="card {isNew ? 'is-new' : ''} {isHot ? 'is-hot' : ''}"
-  on:click={() => dispatch('select', e)}
+<Card
+  interactive
+  highlight={cardHighlight}
+  padding="sm"
   title={e.name}
+  on:click={() => dispatch('select', e)}
 >
   <div class="badges-container">
     {#if isHot}
-      <span
-        class="badge hot-badge"
+      <Badge
+        variant="hot"
+        shape="pill"
+        animate
         title="Top #{hotRank} más usado ({e.copy_count ?? 0} copias, {e.interaction_count ?? 0} interacciones)"
       >
         <svg
@@ -39,11 +44,16 @@
           ></path>
         </svg>
         <span class="rank-num">#{hotRank}</span>
-      </span>
+      </Badge>
     {/if}
 
     {#if isNew}
-      <span class="badge new-badge" title="Recién creado ({new Date(e.created_at).toLocaleString()})">
+      <Badge
+        variant="new"
+        shape="circle"
+        animate
+        title="Recién creado ({new Date(e.created_at).toLocaleString()})"
+      >
         <svg
           width="12"
           height="12"
@@ -59,7 +69,7 @@
           ></path>
           <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"></path>
         </svg>
-      </span>
+      </Badge>
     {/if}
   </div>
 
@@ -67,39 +77,9 @@
     <img src={convertFileSrc(e.path)} alt={e.name} />
   </div>
   <div class="meta">{e.name}</div>
-</button>
+</Card>
 
 <style>
-  .card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    padding: 8px;
-    cursor: pointer;
-    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease,
-      box-shadow 0.15s ease;
-    overflow: hidden;
-    text-align: center;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .card.is-new {
-    border-color: rgba(16, 185, 129, 0.5);
-  }
-  .card.is-hot {
-    border-color: rgba(249, 115, 22, 0.55);
-    box-shadow: 0 0 10px rgba(249, 115, 22, 0.16);
-  }
-  .card:hover {
-    transform: translateY(-2px);
-    background: rgba(255, 255, 255, 0.1);
-    border-color: #6366f1;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
-  }
   .badges-container {
     position: absolute;
     top: 6px;
@@ -109,41 +89,10 @@
     z-index: 2;
     pointer-events: none;
   }
-  .badge {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-    animation: popIn 0.2s ease-out;
-  }
-  .new-badge {
-    background: rgba(16, 185, 129, 0.92);
-  }
-  .hot-badge {
-    width: auto;
-    padding: 0 6px;
-    border-radius: 999px;
-    gap: 2px;
-    background: linear-gradient(135deg, #f59e0b, #ef4444);
-  }
   .rank-num {
     font-size: 10px;
     font-weight: 800;
     line-height: 1;
-  }
-  @keyframes popIn {
-    from {
-      transform: scale(0.5);
-      opacity: 0;
-    }
-    to {
-      transform: scale(1);
-      opacity: 1;
-    }
   }
   .img-wrapper {
     width: 100%;
@@ -166,7 +115,7 @@
     width: 100%;
     font-size: 11px;
     font-weight: 500;
-    color: #e5e7eb;
+    color: inherit;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
