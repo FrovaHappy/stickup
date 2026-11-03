@@ -4,6 +4,7 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
+  import type { Emote } from "$lib/types/emote";
   import {
     Alert,
     Button,
