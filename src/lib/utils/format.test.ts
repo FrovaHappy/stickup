@@ -53,5 +53,15 @@ describe('format utilities', () => {
     expect(resolveDimensions(baseEmote, '128')).toEqual({ width: 128, height: 128 });
     expect(resolveDimensions(baseEmote, 'unknown')).toEqual({ width: 300, height: 200 });
   });
+
+  it('resolves dimensions for custom sizes and extra presets', () => {
+    expect(resolveDimensions(baseEmote, 'custom_96x96')).toEqual({ width: 96, height: 96 });
+    expect(resolveDimensions(baseEmote, '32x32')).toEqual({ width: 32, height: 32 });
+    expect(
+      resolveDimensions(baseEmote, 'my_special', [
+        { label: 'Special', value: 'my_special', width: 110, height: 110 }
+      ])
+    ).toEqual({ width: 110, height: 110 });
+  });
 });
 

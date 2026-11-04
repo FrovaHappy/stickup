@@ -10,6 +10,7 @@
     select: Emote;
     hover: Emote;
     unhover: Emote;
+    contextmenu: { emote: Emote; event: MouseEvent };
   }>();
 
   $: isNew = isEmoteNewByDate(e.created_at);
@@ -24,6 +25,11 @@
   on:mouseleave={() => dispatch('unhover', e)}
   on:focusin={() => dispatch('hover', e)}
   on:focusout={() => dispatch('unhover', e)}
+  on:contextmenu={(evt) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+    dispatch('contextmenu', { emote: e, event: evt });
+  }}
   role="presentation"
 >
   <Card

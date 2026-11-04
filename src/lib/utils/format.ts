@@ -72,15 +72,25 @@ export function formatFileSize(bytes?: number | null): string {
 
 export function resolveDimensions(
   emote: Emote | null,
-  selectedSize: string
+  selectedSize: string,
+  extraPresets?: SizePreset[]
 ): { width: number; height: number } {
   if (!emote) return { width: 48, height: 48 };
   if (selectedSize === 'original') {
     return { width: emote.original_width, height: emote.original_height };
   }
-  const preset = SIZE_PRESETS.find((p) => p.value === selectedSize);
+  const allPresets = extraPresets ? [...SIZE_PRESETS, ...extraPresets] : SIZE_PRESETS;
+  const preset = allPresets.find((p) => p.value === selectedSize);
   if (preset && typeof preset.width === 'number') {
     return { width: preset.width, height: preset.height ?? preset.width };
+  }
+  const match = selectedSize.match(/^(?:custom_)?(\d+)x(\d+)$/i);
+  if (match) {
+    const w = parseInt(match[1], 10);
+    const h = parseInt(match[2], 10);
+    if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
+      return { width: w, height: h };
+    }
   }
   return { width: emote.original_width, height: emote.original_height };
 }

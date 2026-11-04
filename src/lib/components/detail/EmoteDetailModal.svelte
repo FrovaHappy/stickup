@@ -8,6 +8,13 @@
     isEmoteNewByDate
   } from '$lib/stores/emotes';
   import {
+    allSizePresets,
+    customSizes,
+    addCustomSize,
+    removeCustomSize
+  } from '$lib/stores/sizes';
+  import { toast } from '$lib/stores/toast';
+  import {
     SIZE_PRESETS,
     formatFileSize,
     getAvailableFormats,
@@ -36,6 +43,23 @@
 
   let newFileSize: number | null = null;
   let isCalculatingSize = false;
+
+  let showCustomSizeInput = false;
+  let customWidth = 96;
+  let customHeight = 96;
+  let customSizeError = '';
+
+  function handleAddCustomSize() {
+    customSizeError = '';
+    const preset = addCustomSize(customWidth, customHeight);
+    if (!preset) {
+      customSizeError = 'Las dimensiones deben ser entre 8 y 4096 px.';
+      return;
+    }
+    selectedSize = preset.value;
+    showCustomSizeInput = false;
+    toast.success(`✓ Tamaño ${preset.label} guardado`);
+  }
 
   onMount(async () => {
     if (emote) {
@@ -72,7 +96,7 @@
   $: isHot = hotRank !== null;
   $: isNew = emote ? isEmoteNewByDate(emote.created_at) : false;
 
-  $: targetDimensions = resolveDimensions(emote, selectedSize);
+  $: targetDimensions = resolveDimensions(emote, selectedSize, $customSizes);
 
   $: if (emote && (selectedSize || selectedFormat)) {
     calculateNewSize();
@@ -306,15 +330,66 @@
     <div class="options-section">
       <div class="options-label">Tamaño / Dimensiones:</div>
       <div class="pills-row">
-        {#each SIZE_PRESETS as preset}
+        {#each $allSizePresets as preset}
+          {@const isCustom = preset.value.startsWith('custom_')}
           <Chip
             active={selectedSize === preset.value}
+            removable={isCustom}
             on:click={() => (selectedSize = preset.value)}
+            on:remove={() => {
+              removeCustomSize(preset.value);
+              if (selectedSize === preset.value) {
+                selectedSize = 'original';
+              }
+              toast.info(`Tamaño ${preset.label} eliminado`);
+            }}
           >
             {preset.label}
           </Chip>
         {/each}
+
+        <Chip
+          variant="sky"
+          active={showCustomSizeInput}
+          on:click={() => (showCustomSizeInput = !showCustomSizeInput)}
+        >
+          {showCustomSizeInput ? '✕ Cancelar' : '➕ Personalizado'}
+        </Chip>
       </div>
+
+      {#if showCustomSizeInput}
+        <div class="custom-size-form">
+          <div class="custom-size-inputs">
+            <div class="custom-input-group">
+              <span class="custom-input-label">Ancho:</span>
+              <input
+                type="number"
+                min="8"
+                max="4096"
+                bind:value={customWidth}
+                class="size-num-input"
+              />
+            </div>
+            <span class="size-cross">×</span>
+            <div class="custom-input-group">
+              <span class="custom-input-label">Alto:</span>
+              <input
+                type="number"
+                min="8"
+                max="4096"
+                bind:value={customHeight}
+                class="size-num-input"
+              />
+            </div>
+            <Button variant="primary" size="sm" on:click={handleAddCustomSize}>
+              Guardar
+            </Button>
+          </div>
+          {#if customSizeError}
+            <span class="custom-size-error">{customSizeError}</span>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="options-section">
@@ -546,5 +621,53 @@
   }
   .meta-value.highlight {
     color: #facc15;
+  }
+  .custom-size-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 4px;
+  }
+  .custom-size-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .custom-input-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .custom-input-label {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 500;
+  }
+  .size-num-input {
+    width: 60px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-size: 12px;
+    color: inherit;
+    text-align: center;
+  }
+  .size-num-input:focus {
+    outline: none;
+    border-color: #6366f1;
+  }
+  .size-cross {
+    color: #9ca3af;
+    font-weight: 700;
+  }
+  .custom-size-error {
+    font-size: 11px;
+    color: #f87171;
   }
 </style>

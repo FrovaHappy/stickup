@@ -5,14 +5,17 @@
   import SearchFilterBar from '$lib/components/SearchFilterBar.svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import EmoteDetailModal from '$lib/components/detail/EmoteDetailModal.svelte';
-  import { Alert } from '$lib/components/system-ui';
+  import { ContextMenu, Toast } from '$lib/components/system-ui';
   import { api } from '$lib/services/api';
   import { loadEmotes, type Emote } from '$lib/stores/emotes';
+  import { customSizes } from '$lib/stores/sizes';
+  import { toast } from '$lib/stores/toast';
 
   let selected: Emote | null = null;
   let filteredEmotes: Emote[] = [];
-  let copyToast = '';
-  let copyToastTimeout: ReturnType<typeof setTimeout> | null = null;
+  let contextMenuOpen = false;
+  let contextMenuPos = { x: 0, y: 0 };
+  let contextMenuEmote: Emote | null = null;
 
   onMount(() => {
     loadEmotes();
@@ -33,20 +36,119 @@
         emote.original_width,
         emote.original_height
       );
-      copyToast = `✓ ¡Emote "${emote.name}" copiado al portapapeles!`;
+      toast.success(`✓ ¡Emote "${emote.name}" copiado al portapapeles!`);
       await loadEmotes();
-      if (copyToastTimeout) clearTimeout(copyToastTimeout);
-      copyToastTimeout = setTimeout(() => {
-        copyToast = '';
-      }, 2500);
     } catch (err: any) {
-      copyToast = `Error al copiar: ${err?.message || err}`;
-      if (copyToastTimeout) clearTimeout(copyToastTimeout);
-      copyToastTimeout = setTimeout(() => {
-        copyToast = '';
-      }, 3000);
+      toast.error(`Error al copiar: ${err?.message || err}`);
     }
   }
+
+  async function handleEmoteCopyWithSize(
+    emote: Emote,
+    width: number,
+    height: number,
+    sizeLabel: string
+  ) {
+    try {
+      await api.copyToClipboard(
+        emote.id,
+        emote.path,
+        emote.format,
+        width,
+        height
+      );
+      toast.success(`✓ ¡"${emote.name}" copiado (${sizeLabel})!`);
+      await loadEmotes();
+    } catch (err: any) {
+      toast.error(`Error al copiar: ${err?.message || err}`);
+    }
+  }
+
+  async function handleCopyText(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`✓ ${label} copiado al portapapeles`);
+    } catch {
+      toast.error(`Error al copiar ${label.toLowerCase()}`);
+    }
+  }
+
+  async function handleDeleteEmote(emote: Emote) {
+    if (confirm(`¿Eliminar emote "${emote.name}" de forma permanente?`)) {
+      try {
+        await api.deleteEmote(emote.id);
+        toast.success(`✓ Emote "${emote.name}" eliminado`);
+        await loadEmotes();
+      } catch (err: any) {
+        toast.error(`Error al eliminar: ${err?.message || err}`);
+      }
+    }
+  }
+
+  function handleContextMenu(detail: { emote: Emote; event: MouseEvent }) {
+    contextMenuEmote = detail.emote;
+    contextMenuPos = { x: detail.event.clientX, y: detail.event.clientY };
+    contextMenuOpen = true;
+  }
+
+  $: contextMenuItems = (() => {
+    if (!contextMenuEmote) return [];
+    const emote = contextMenuEmote;
+
+    const customSizeItems = $customSizes.map((cs) => ({
+      label: `Copiar ${cs.label}`,
+      icon: '📐',
+      action: () =>
+        cs.width &&
+        cs.height &&
+        handleEmoteCopyWithSize(emote, cs.width, cs.height, cs.label)
+    }));
+
+    return [
+      {
+        label: 'Copiar emote (Original)',
+        icon: '📋',
+        shortcut: 'Ctrl+C',
+        action: () => handleEmoteCopy(emote)
+      },
+      {
+        label: 'Copiar 48×48 (Emote)',
+        icon: '📐',
+        action: () => handleEmoteCopyWithSize(emote, 48, 48, '48×48')
+      },
+      {
+        label: 'Copiar 128×128 (Grande)',
+        icon: '📐',
+        action: () => handleEmoteCopyWithSize(emote, 128, 128, '128×128')
+      },
+      ...customSizeItems,
+      { divider: true, label: '' },
+      {
+        label: 'Copiar nombre',
+        icon: '🔤',
+        action: () => handleCopyText(emote.name, 'Nombre')
+      },
+      {
+        label: 'Copiar ruta de archivo',
+        icon: '🔗',
+        action: () => handleCopyText(emote.path, 'Ruta')
+      },
+      { divider: true, label: '' },
+      {
+        label: 'Ver detalles / Editar',
+        icon: 'ℹ️',
+        action: () => {
+          selected = emote;
+        }
+      },
+      {
+        label: 'Eliminar emote',
+        icon: '🗑️',
+        danger: true,
+        action: () => handleDeleteEmote(emote)
+      }
+    ];
+  })();
 </script>
 
 <main class="container">
@@ -59,15 +161,20 @@
     disabled={selected !== null}
     on:select={(e) => (selected = e.detail)}
     on:copy={(e) => handleEmoteCopy(e.detail)}
+    on:contextmenu={(e) => handleContextMenu(e.detail)}
   />
   {#if selected}
     <EmoteDetailModal emote={selected} onClose={closeDetail} />
   {/if}
-  {#if copyToast}
-    <div class="toast-wrapper">
-      <Alert variant="toast">{copyToast}</Alert>
-    </div>
-  {/if}
+
+  <ContextMenu
+    bind:open={contextMenuOpen}
+    x={contextMenuPos.x}
+    y={contextMenuPos.y}
+    items={contextMenuItems}
+  />
+
+  <Toast />
 </main>
 
 <style>
@@ -97,15 +204,6 @@
 
   h1 {
     text-align: center;
-  }
-
-  .toast-wrapper {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 9999;
-    pointer-events: none;
   }
 
   @media (prefers-color-scheme: dark) {

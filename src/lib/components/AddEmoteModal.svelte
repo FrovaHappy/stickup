@@ -4,6 +4,7 @@
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
+  import { toast } from "$lib/stores/toast";
   import type { Emote } from "$lib/types/emote";
   import {
     Alert,
@@ -31,6 +32,11 @@
   function showFeedback(msg: string, error = false) {
     statusMsg = msg;
     isError = error;
+    if (error) {
+      toast.error(msg);
+    } else {
+      toast.success(msg);
+    }
     setTimeout(() => {
       if (statusMsg === msg) {
         statusMsg = "";
@@ -279,7 +285,6 @@
       }
       lastPasteTimestamp = now;
       e.preventDefault();
-      isOpen = true;
       handlePasteClipboard();
     }
   }
@@ -301,7 +306,6 @@
     }
     lastPasteTimestamp = now;
     e.preventDefault();
-    isOpen = true;
 
     // Discriminar si el navegador entrega directamente archivos / blobs en el evento de paste
     const dt = e.clipboardData;

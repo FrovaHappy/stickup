@@ -9,6 +9,7 @@
   const dispatch = createEventDispatcher<{
     select: Emote;
     copy: Emote;
+    contextmenu: { emote: Emote; event: MouseEvent };
   }>();
 
   let hoveredEmote: Emote | null = null;
@@ -42,6 +43,7 @@
       <EmoteCard
         {e}
         on:select={(ev) => dispatch('select', ev.detail)}
+        on:contextmenu={(ev) => dispatch('contextmenu', ev.detail)}
         on:hover={(ev) => (hoveredEmote = ev.detail)}
         on:unhover={(ev) => {
           if (hoveredEmote?.id === ev.detail.id) {
