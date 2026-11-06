@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Emote, ResyncStats } from '$lib/types/emote';
+import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
 
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
@@ -24,5 +25,15 @@ export const api = {
     targetHeight: number
   ) => invoke<boolean>('copy_to_clipboard', { id, path, format, targetWidth, targetHeight }),
   recordInteraction: (id: number) => invoke<boolean>('record_interaction', { id }),
-  resyncEmotes: () => invoke<ResyncStats>('resync_emotes')
+  resyncEmotes: () => invoke<ResyncStats>('resync_emotes'),
+  createBackup: (destinationPath?: string) =>
+    invoke<BackupResult>('create_backup', { destinationPath: destinationPath || null }),
+  restoreBackup: (backupPath: string) =>
+    invoke<RestoreResult>('restore_backup', { backupPath }),
+  deleteBackup: (backupPath: string) =>
+    invoke<boolean>('delete_backup', { backupPath }),
+  listBackups: () => invoke<BackupInfo[]>('list_backups'),
+  inspectBackup: (backupPath: string) =>
+    invoke<BackupInfo>('inspect_backup', { backupPath }),
+  getAppVersion: () => invoke<string>('get_app_version')
 };

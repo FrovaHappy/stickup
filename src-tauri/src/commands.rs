@@ -1,9 +1,9 @@
 use crate::clipboard::{self, ClipboardPayload};
 use crate::db::{
-    clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
+    self, clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
     set_active_db_dir, upgrade_legacy_db_in_dir, DB_FILE_NAME,
 };
-use crate::models::{Emote, ResyncStats};
+use crate::models::{BackupInfo, BackupResult, Emote, RestoreResult, ResyncStats};
 use image::codecs::gif::{GifDecoder, GifEncoder, Repeat};
 use image::codecs::webp::WebPDecoder;
 use image::{AnimationDecoder, Delay, Frame, GenericImageView, ImageDecoder, ImageFormat};
@@ -1245,6 +1245,49 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
     stats.saved_bytes = (stats.bytes_before as i64) - (stats.bytes_after as i64);
 
     Ok(stats)
+}
+
+#[tauri::command]
+pub fn create_backup(destination_path: Option<String>) -> Result<BackupResult, String> {
+    let dest_clean = destination_path.as_deref().map(clean_path_str);
+    let dest_path = dest_clean.as_deref().map(Path::new);
+    let info = db::create_db_backup(dest_path)?;
+    Ok(BackupResult {
+        success: true,
+        message: format!(
+            "Copia de seguridad guardada exitosamente: {} ({} emotes)",
+            info.file_name, info.emote_count
+        ),
+        backup: info,
+    })
+}
+
+#[tauri::command]
+pub fn restore_backup(backup_path: String) -> Result<RestoreResult, String> {
+    let clean = clean_path_str(&backup_path);
+    db::restore_db_backup(Path::new(&clean))
+}
+
+#[tauri::command]
+pub fn list_backups() -> Result<Vec<BackupInfo>, String> {
+    db::list_db_backups()
+}
+
+#[tauri::command]
+pub fn inspect_backup(backup_path: String) -> Result<BackupInfo, String> {
+    let clean = clean_path_str(&backup_path);
+    db::inspect_backup_file(Path::new(&clean))
+}
+
+#[tauri::command]
+pub fn delete_backup(backup_path: String) -> Result<bool, String> {
+    let clean = clean_path_str(&backup_path);
+    db::delete_db_backup(Path::new(&clean))
+}
+
+#[tauri::command]
+pub fn get_app_version() -> Result<String, String> {
+    Ok(db::CURRENT_APP_VERSION.to_string())
 }
 
 #[cfg(test)]

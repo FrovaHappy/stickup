@@ -28,3 +28,27 @@ pub struct ResyncStats {
     pub bytes_after: u64,
     pub saved_bytes: i64,
 }
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct BackupInfo {
+    pub file_name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub emote_count: usize,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct BackupResult {
+    pub success: bool,
+    pub backup: BackupInfo,
+    pub message: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct RestoreResult {
+    pub success: bool,
+    pub restored_emote_count: usize,
+    pub safety_backup_path: Option<String>,
+    pub message: String,
+}

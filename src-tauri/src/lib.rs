@@ -7,6 +7,11 @@ mod models;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|_app| {
+            // Asegura la base de datos y crea la copia automática por actualización antes de iniciar
+            let _ = db::ensure_db();
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_emotes,
             commands::import_paths,
@@ -19,7 +24,13 @@ pub fn run() {
             commands::update_tag,
             commands::copy_to_clipboard,
             commands::record_interaction,
-            commands::resync_emotes
+            commands::resync_emotes,
+            commands::create_backup,
+            commands::restore_backup,
+            commands::delete_backup,
+            commands::list_backups,
+            commands::inspect_backup,
+            commands::get_app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
