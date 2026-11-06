@@ -16,7 +16,8 @@
     Modal,
   } from "$lib/components/system-ui";
 
-  let isOpen = false;
+  export let isOpen = false;
+  export let customTrigger = false;
   let isDragging = false;
   let isBusy = false;
   let showUrlInput = false;
@@ -368,14 +369,18 @@
 
 <svelte:window on:paste={handleGlobalPaste} on:keydown={handleGlobalKeyDown} />
 
-<Button
-  variant="primary"
-  on:click={() => (isOpen = true)}
-  title="Agregar emotes (Archivos, Carpeta, Portapapeles con Ctrl+V, URL o Drag & Drop)"
->
-  <Plus size={16} />
-  <span>Agregar</span>
-</Button>
+{#if !customTrigger && !$$slots.trigger}
+  <Button
+    variant="primary"
+    on:click={() => (isOpen = true)}
+    title="Agregar emotes (Archivos, Carpeta, Portapapeles con Ctrl+V, URL o Drag & Drop)"
+  >
+    <Plus size={16} />
+    <span>Agregar</span>
+  </Button>
+{:else if $$slots.trigger}
+  <slot name="trigger" open={() => (isOpen = true)} />
+{/if}
 
 <Modal bind:open={isOpen} maxWidth="460px" busy={isBusy}>
   <Dropzone

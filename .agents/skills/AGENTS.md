@@ -22,6 +22,9 @@ Todo cambio en **StickUp** se rige por **ODD** (ver detalle completo en [.agents
 
 ## 2. Principios de Diseño (Zero Dead Code)
 
+0. **Gestor de Paquetes Exclusivo**:
+   - El gestor de paquetes del proyecto es estrictamente **pnpm** (`pnpm run check`, `pnpm test`, `pnpm build`, `pnpm dev`, etc.). No usar npm.
+
 1. **Mínimo e Indispensable**:
    - No mantener funciones, comandos de Tauri, plugins ni dependencias en `Cargo.toml` o `package.json` que no sean invocados activamente.
    - Si un comando del backend no tiene llamador en el frontend, debe eliminarse.
@@ -82,7 +85,7 @@ src/
 1. Verificar compilación de Rust:
    `cargo check --manifest-path src-tauri/Cargo.toml`
 2. Verificar tipos de Svelte/TypeScript:
-   `npm run check`
+   `pnpm run check`
 3. Ejecutar tests unitarios cuando aplique:
-   `npm run test` / `cargo test --manifest-path src-tauri/Cargo.toml`
+   `pnpm test` / `cargo test --manifest-path src-tauri/Cargo.toml`
 4. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `odd/tasks/{feature-slug}.md` si la tarea fue sustancial.

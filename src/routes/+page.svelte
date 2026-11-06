@@ -2,18 +2,17 @@
   import { onMount } from 'svelte';
   import { Copy, Scaling, Type, Link, Info, Trash2 } from '@lucide/svelte';
   import EmoteGrid from '$lib/components/EmoteGrid.svelte';
-  import ImportButton from '$lib/components/ImportButton.svelte';
-  import SearchFilterBar from '$lib/components/SearchFilterBar.svelte';
-  import StorageSettings from '$lib/components/StorageSettings.svelte';
+  import MainHeader from '$lib/components/MainHeader.svelte';
   import EmoteDetailModal from '$lib/components/detail/EmoteDetailModal.svelte';
-  import { ContextMenu, Toast } from '$lib/components/system-ui';
+  import { ContextMenu } from '$lib/components/system-ui';
   import { api } from '$lib/services/api';
-  import { loadEmotes, type Emote } from '$lib/stores/emotes';
+  import emotes, { loadEmotes, type Emote } from '$lib/stores/emotes';
   import { customSizes } from '$lib/stores/sizes';
   import { toast } from '$lib/stores/toast';
+  import { sortOption, sortEmotesList } from '$lib/stores/preferences';
 
   let selected: Emote | null = null;
-  let filteredEmotes: Emote[] = [];
+  let searchQuery = '';
   let contextMenuOpen = false;
   let contextMenuPos = { x: 0, y: 0 };
   let contextMenuEmote: Emote | null = null;
@@ -92,6 +91,24 @@
     contextMenuOpen = true;
   }
 
+  $: filteredAndSortedEmotes = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    let result = $emotes;
+
+    if (q) {
+      result = result.filter((e) => {
+        const nameMatch = (e.name ?? '').toLowerCase().includes(q);
+        const tags = (e.tag ?? '')
+          .split(',')
+          .map((t) => t.trim().toLowerCase());
+        const tagMatch = tags.some((t) => t.includes(q));
+        return nameMatch || tagMatch;
+      });
+    }
+
+    return sortEmotesList(result, $sortOption);
+  })();
+
   $: contextMenuItems = (() => {
     if (!contextMenuEmote) return [];
     const emote = contextMenuEmote;
@@ -152,18 +169,19 @@
   })();
 </script>
 
-<main class="container">
-  <h1>Emotes</h1>
-  <StorageSettings />
-  <ImportButton />
-  <SearchFilterBar bind:filteredEmotes />
-  <EmoteGrid
-    emotes={filteredEmotes}
-    disabled={selected !== null}
-    on:select={(e) => (selected = e.detail)}
-    on:copy={(e) => handleEmoteCopy(e.detail)}
-    on:contextmenu={(e) => handleContextMenu(e.detail)}
-  />
+<div class="home-view">
+  <MainHeader bind:searchQuery />
+
+  <div class="grid-container">
+    <EmoteGrid
+      emotes={filteredAndSortedEmotes}
+      disabled={selected !== null}
+      on:select={(e) => (selected = e.detail)}
+      on:copy={(e) => handleEmoteCopy(e.detail)}
+      on:contextmenu={(e) => handleContextMenu(e.detail)}
+    />
+  </div>
+
   {#if selected}
     <EmoteDetailModal emote={selected} onClose={closeDetail} />
   {/if}
@@ -174,43 +192,18 @@
     y={contextMenuPos.y}
     items={contextMenuItems}
   />
-
-  <Toast />
-</main>
+</div>
 
 <style>
-  :root {
-    font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 400;
-    color: #0f0f0f;
-    background-color: #f6f6f6;
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    -webkit-text-size-adjust: 100%;
-  }
-
-  .container {
-    padding-top: 5vh;
+  .home-view {
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    text-align: center;
-    max-width: 900px;
-    margin: 0 auto;
+    width: 100%;
+    min-height: 100%;
   }
 
-  h1 {
-    text-align: center;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color: #f6f6f6;
-      background-color: #2f2f2f;
-    }
+  .grid-container {
+    width: 100%;
+    flex: 1;
   }
 </style>

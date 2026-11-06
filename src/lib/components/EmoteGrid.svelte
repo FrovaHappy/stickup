@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Emote } from '$lib/types/emote';
   import EmoteCard from './EmoteCard.svelte';
+  import { gridSize } from '$lib/stores/preferences';
   import { createEventDispatcher } from 'svelte';
 
   export let emotes: Emote[] = [];
@@ -36,9 +37,12 @@
 <svelte:window on:keydown={handleKeyDown} />
 
 {#if emotes.length === 0}
-  <div class="empty-state">No se encontraron emotes con los filtros actuales.</div>
+  <div class="empty-state">
+    <p class="empty-title">No se encontraron emotes</p>
+    <p class="empty-desc">Prueba a buscar con otro término o cambia tus filtros.</p>
+  </div>
 {:else}
-  <div class="grid">
+  <div class="grid grid-size-{$gridSize}">
     {#each emotes as e (e.id)}
       <EmoteCard
         {e}
@@ -58,14 +62,43 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 14px;
-    padding: 10px 0 40px 0;
     width: 100%;
+    padding: 12px 28px 48px 28px;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
   }
+
+  .grid.grid-size-small {
+    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+    gap: 10px;
+  }
+
+  .grid.grid-size-medium {
+    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 12px;
+  }
+
+  .grid.grid-size-large {
+    grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+    gap: 16px;
+  }
+
   .empty-state {
-    padding: 36px 16px;
-    color: #9ca3af;
-    font-size: 14px;
+    padding: 64px 24px;
+    text-align: center;
+    color: #a1a1aa;
+    margin: 0 auto;
+  }
+
+  .empty-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #e4e4e7;
+    margin: 0 0 6px 0;
+  }
+
+  .empty-desc {
+    font-size: 13px;
+    margin: 0;
   }
 </style>

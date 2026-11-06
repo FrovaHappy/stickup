@@ -9,6 +9,7 @@ export { default as Dropzone } from './Dropzone.svelte';
 export { default as Input } from './Input.svelte';
 export { default as Modal } from './Modal.svelte';
 export { default as Toast } from './Toast.svelte';
+export { default as Logo } from './Logo.svelte';
 
 export type {
   AlertVariant,
