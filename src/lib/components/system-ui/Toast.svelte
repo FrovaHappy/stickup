@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { X } from '@lucide/svelte';
   import { toasts, dismissToast } from '$lib/stores/toast';
   import type { ToastItem, ToastVariant } from '$lib/types/system-ui';
 
@@ -42,7 +43,7 @@
       aria-label="Cerrar notificación"
       on:click={() => item?.id && dismissToast(item.id)}
     >
-      ✕
+      <X size={14} />
     </button>
   </div>
 {:else}
@@ -57,7 +58,7 @@
           aria-label="Cerrar notificación"
           on:click={() => dismissToast(t.id)}
         >
-          ✕
+          <X size={14} />
         </button>
       </div>
     {/each}

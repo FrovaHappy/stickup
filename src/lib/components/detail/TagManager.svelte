@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Plus } from '@lucide/svelte';
   import { allTags } from '$lib/stores/emotes';
   import { Chip, Dropdown } from '$lib/components/system-ui';
 
@@ -97,7 +98,10 @@
             }}
           >
             <span class="tag-item-name">{st}</span>
-            <span class="tag-item-action">+ Agregar</span>
+            <span class="tag-item-action">
+              <Plus size={12} />
+              <span>Agregar</span>
+            </span>
           </button>
         {/each}
       </div>
@@ -193,6 +197,9 @@
     font-weight: 500;
   }
   .tag-item-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 11px;
     color: #818cf8;
     font-weight: 600;

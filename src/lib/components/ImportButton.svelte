@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { RefreshCw, X } from '@lucide/svelte';
   import { api } from '$lib/services/api';
   import { loadEmotes } from '$lib/stores/emotes';
   import { formatFileSize } from '$lib/utils/format';
@@ -44,7 +45,8 @@
       on:click={handleResync}
       title="Escanea el directorio activo, convierte PNG/JPG a WebP eliminando originales y sincroniza la base de datos"
     >
-      {resyncing ? '🔄 Resincronizando...' : '🔄 Resincronizar'}
+      <RefreshCw size={14} class={resyncing ? 'ui-spin' : ''} />
+      <span>{resyncing ? 'Resincronizando...' : 'Resincronizar'}</span>
     </Button>
   </div>
 
@@ -66,7 +68,7 @@
           ariaLabel="Cerrar estadísticas"
           on:click={() => (resyncStats = null)}
         >
-          ✕
+          <X size={14} />
         </Button>
       </div>
 

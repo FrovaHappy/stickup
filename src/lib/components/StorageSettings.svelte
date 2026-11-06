@@ -1,6 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { open, save } from '@tauri-apps/plugin-dialog';
+  import {
+    FolderPen,
+    Save,
+    Upload,
+    Download,
+    History,
+    Database,
+    PackageCheck,
+    Folder,
+    RotateCcw,
+    Trash2,
+    Plus
+  } from '@lucide/svelte';
   import { api } from '$lib/services/api';
   import { loadEmotes } from '$lib/stores/emotes';
   import { toast } from '$lib/stores/toast';
@@ -272,7 +285,7 @@
         <Badge variant="gray" title={`Versión de StickUp registrada: v${appVersion}`}>v{appVersion}</Badge>
       {/if}
       <Button variant="outline" size="sm" disabled={isBusy} on:click={pickStoragePath}>
-        ✏️ Cambiar ruta
+        <FolderPen size={14} /> Cambiar ruta
       </Button>
     </div>
 
@@ -280,16 +293,16 @@
       <span class="backup-label">🛡️ Copias de seguridad:</span>
       <div class="backup-actions">
         <Button variant="secondary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
-          💾 Copia rápida
+          <Save size={14} /> Copia rápida
         </Button>
         <Button variant="outline" size="sm" disabled={isBusy} on:click={handleExportBackup}>
-          📤 Exportar...
+          <Upload size={14} /> Exportar...
         </Button>
         <Button variant="outline" size="sm" disabled={isBusy} on:click={handleSelectBackupToRestore}>
-          📥 Restaurar...
+          <Download size={14} /> Restaurar...
         </Button>
         <Button variant="ghost" size="sm" disabled={isBusy} on:click={handleOpenHistory}>
-          📜 Historial
+          <History size={14} /> Historial
         </Button>
       </div>
     </div>
@@ -315,7 +328,7 @@
                 disabled={isBusy}
                 on:click={() => applyPendingChange(true, true)}
               >
-                🗂️ Conservar BD actual ({currentDbCount} emotes)
+                <Database size={14} /> Conservar BD actual ({currentDbCount} emotes)
               </Button>
               <Button
                 variant="success"
@@ -323,7 +336,7 @@
                 disabled={isBusy}
                 on:click={() => applyPendingChange(true, false)}
               >
-                📥 Conservar BD del destino ({targetDbCount} emotes)
+                <Download size={14} /> Conservar BD del destino ({targetDbCount} emotes)
               </Button>
               <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
                 Cancelar
@@ -349,7 +362,7 @@
                 disabled={isBusy}
                 on:click={() => applyPendingChange(true)}
               >
-                📦 Migrar todo (Imágenes + BD)
+                <PackageCheck size={14} /> Migrar todo (Imágenes + BD)
               </Button>
               <Button
                 variant="success"
@@ -357,7 +370,7 @@
                 disabled={isBusy}
                 on:click={() => applyPendingChange(false)}
               >
-                📁 Solo cambiar ruta
+                <Folder size={14} /> Solo cambiar ruta
               </Button>
               <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
                 Cancelar
@@ -420,7 +433,7 @@
         Cancelar
       </Button>
       <Button variant="primary" size="sm" disabled={isBusy} on:click={confirmRestore}>
-        🔄 Confirmar y Restaurar
+        <RotateCcw size={14} /> Confirmar y Restaurar
       </Button>
     </svelte:fragment>
   </Modal>
@@ -447,7 +460,7 @@
         <div class="empty-backups">
           <p>No se encontraron copias de seguridad en la carpeta local (<code>backups/</code>).</p>
           <Button variant="primary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
-            💾 Crear copia ahora
+            <Save size={14} /> Crear copia ahora
           </Button>
         </div>
       {:else}
@@ -473,7 +486,7 @@
                   disabled={isBusy}
                   on:click={() => handleChooseHistoryItem(item)}
                 >
-                  📥 Restaurar
+                  <RotateCcw size={14} /> Restaurar
                 </Button>
                 <Button
                   variant="ghost"
@@ -482,7 +495,7 @@
                   title="Eliminar copia de seguridad"
                   on:click={() => requestDeleteBackup(item)}
                 >
-                  🗑️
+                  <Trash2 size={14} />
                 </Button>
               </div>
             </div>
@@ -496,7 +509,7 @@
         Cerrar
       </Button>
       <Button variant="secondary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
-        ➕ Nueva copia rápida
+        <Plus size={14} /> Nueva copia rápida
       </Button>
     </svelte:fragment>
   </Modal>
@@ -541,7 +554,7 @@
         Cancelar
       </Button>
       <Button variant="danger" size="sm" disabled={isBusy} on:click={confirmDeleteBackup}>
-        🗑️ Eliminar copia
+        <Trash2 size={14} /> Eliminar copia
       </Button>
     </svelte:fragment>
   </Modal>

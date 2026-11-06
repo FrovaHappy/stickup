@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
+  import { Plus, Image, FolderOpen, Link } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
@@ -372,7 +373,7 @@
   on:click={() => (isOpen = true)}
   title="Agregar emotes (Archivos, Carpeta, Portapapeles con Ctrl+V, URL o Drag & Drop)"
 >
-  <span class="plus-icon">+</span>
+  <Plus size={16} />
   <span>Agregar</span>
 </Button>
 
@@ -386,11 +387,11 @@
   >
     <div class="primary-actions">
       <Button variant="primary" disabled={isBusy} on:click={pickFiles}>
-        🖼️ Elegir Archivo(s)
+        <Image size={15} /> Elegir Archivo(s)
       </Button>
 
       <Button variant="secondary" disabled={isBusy} on:click={pickFolder}>
-        📁 Elegir Carpeta
+        <FolderOpen size={15} /> Elegir Carpeta
       </Button>
     </div>
 
@@ -401,7 +402,7 @@
         disabled={isBusy}
         on:click={() => (showUrlInput = !showUrlInput)}
       >
-        🔗 Desde URL
+        <Link size={13} /> Desde URL
       </Chip>
     </div>
 
@@ -430,7 +431,7 @@
             loading={isBusy}
             disabled={isBusy || !urlValue.trim()}
           >
-            ➕ Importar URL
+            <Plus size={14} /> Importar URL
           </Button>
         </div>
       </form>
@@ -445,11 +446,6 @@
 </Modal>
 
 <style>
-  .plus-icon {
-    font-size: 18px;
-    line-height: 1;
-    font-weight: 800;
-  }
   .primary-actions {
     display: flex;
     flex-wrap: wrap;

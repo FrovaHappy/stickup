@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Copy, Scaling, Type, Link, Info, Trash2 } from '@lucide/svelte';
   import EmoteGrid from '$lib/components/EmoteGrid.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
   import SearchFilterBar from '$lib/components/SearchFilterBar.svelte';
@@ -97,7 +98,7 @@
 
     const customSizeItems = $customSizes.map((cs) => ({
       label: `Copiar ${cs.label}`,
-      icon: '📐',
+      icon: Scaling,
       action: () =>
         cs.width &&
         cs.height &&
@@ -107,43 +108,43 @@
     return [
       {
         label: 'Copiar emote (Original)',
-        icon: '📋',
+        icon: Copy,
         shortcut: 'Ctrl+C',
         action: () => handleEmoteCopy(emote)
       },
       {
         label: 'Copiar 48×48 (Emote)',
-        icon: '📐',
+        icon: Scaling,
         action: () => handleEmoteCopyWithSize(emote, 48, 48, '48×48')
       },
       {
         label: 'Copiar 128×128 (Grande)',
-        icon: '📐',
+        icon: Scaling,
         action: () => handleEmoteCopyWithSize(emote, 128, 128, '128×128')
       },
       ...customSizeItems,
       { divider: true, label: '' },
       {
         label: 'Copiar nombre',
-        icon: '🔤',
+        icon: Type,
         action: () => handleCopyText(emote.name, 'Nombre')
       },
       {
         label: 'Copiar ruta de archivo',
-        icon: '🔗',
+        icon: Link,
         action: () => handleCopyText(emote.path, 'Ruta')
       },
       { divider: true, label: '' },
       {
         label: 'Ver detalles / Editar',
-        icon: 'ℹ️',
+        icon: Info,
         action: () => {
           selected = emote;
         }
       },
       {
         label: 'Eliminar emote',
-        icon: '🗑️',
+        icon: Trash2,
         danger: true,
         action: () => handleDeleteEmote(emote)
       }

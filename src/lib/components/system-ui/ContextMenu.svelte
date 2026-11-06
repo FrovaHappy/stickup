@@ -99,7 +99,13 @@
             on:click={() => handleItemClick(item)}
           >
             {#if item.icon}
-              <span class="menu-icon">{item.icon}</span>
+              <span class="menu-icon">
+                {#if typeof item.icon === 'string'}
+                  {item.icon}
+                {:else}
+                  <svelte:component this={item.icon} size={15} />
+                {/if}
+              </span>
             {/if}
             <span class="menu-label">{item.label}</span>
             {#if item.shortcut}

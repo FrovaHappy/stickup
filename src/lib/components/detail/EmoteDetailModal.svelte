@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Copy, Check, Download, Trash2 } from '@lucide/svelte';
   import type { Emote } from '$lib/types/emote';
   import { api } from '$lib/services/api';
   import {
@@ -284,17 +285,7 @@
             title="Copiar nombre"
             on:click={() => copyText(emoteName, 'Nombre')}
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
+            <Copy size={14} />
           </Button>
         </Input>
 
@@ -311,17 +302,7 @@
             title="Copiar ruta"
             on:click={() => copyText(emote?.path ?? '', 'Ruta')}
           >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
+            <Copy size={14} />
           </Button>
         </Input>
       </div>
@@ -382,7 +363,7 @@
               />
             </div>
             <Button variant="primary" size="sm" on:click={handleAddCustomSize}>
-              Guardar
+              <Check size={14} /> Guardar
             </Button>
           </div>
           {#if customSizeError}
@@ -414,7 +395,8 @@
       fullWidth
       on:click={copyImageToClipboard}
     >
-      {copyButtonText}
+      <Copy size={16} />
+      <span>{copyButtonText}</span>
     </Button>
 
     <div class="meta-section">
@@ -516,10 +498,10 @@
 
     <svelte:fragment slot="footer">
       <Button variant="outline" size="sm" on:click={downloadResizedImage}>
-        💾 Descargar copia
+        <Download size={14} /> Descargar copia
       </Button>
       <Button variant="danger" size="sm" on:click={handleDelete}>
-        🗑️ Eliminar
+        <Trash2 size={14} /> Eliminar
       </Button>
     </svelte:fragment>
 

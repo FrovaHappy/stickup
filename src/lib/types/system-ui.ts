@@ -36,7 +36,7 @@ export interface ToastItem {
 export interface ContextMenuItem {
   id?: string;
   label: string;
-  icon?: string;
+  icon?: any;
   shortcut?: string;
   danger?: boolean;
   disabled?: boolean;

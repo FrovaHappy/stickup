@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { X } from '@lucide/svelte';
   import type { ChipVariant } from '$lib/types/system-ui';
 
   export let variant: ChipVariant = 'default';
@@ -67,7 +68,7 @@
       {disabled}
       on:click={handleRemoveClick}
     >
-      ✕
+      <X size={12} />
     </button>
   {/if}
 </div>

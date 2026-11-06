@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { X } from '@lucide/svelte';
   import type { AlertVariant } from '$lib/types/system-ui';
 
   export let variant: AlertVariant = 'info';
@@ -22,7 +23,7 @@
           aria-label="Cerrar aviso"
           on:click={() => dispatch('close')}
         >
-          ✕
+          <X size={14} />
         </button>
       {/if}
     </div>

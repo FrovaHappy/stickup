@@ -30,6 +30,10 @@ Todo cambio en **StickUp** se rige por **ODD** (ver detalle completo en [.agents
    - Separar claramente: **Modelos/Tipos**, **Base de Datos**, **Procesamiento de Imagen**, **Portapapeles Nativo** y **Comandos IPC**.
 3. **Persistencia Fuera del Árbol de Compilación**:
    - La base de datos SQLite (`emotes.db`) y la carpeta por defecto de emotes deben residir fuera de `src-tauri/` para evitar que el watcher de Tauri recompile la app en desarrollo al modificar metadatos.
+4. **Iconografía Estándar con Lucide (`@lucide/svelte`)**:
+   - Toda la iconografía de la interfaz de usuario debe construirse utilizando **Lucide Icons** mediante `@lucide/svelte` ([Guía oficial](https://lucide.dev/guide/svelte/)), evitando emojis como iconos o SVGs dispersos y desalineados.
+   - Importar exclusivamente los iconos requeridos (cumpliendo *Zero Dead Code*), directamente desde `@lucide/svelte` o mediante sus subrutas (`@lucide/svelte/icons/*`).
+   - Mantener coherencia visual en propiedades clave (`size`, `strokeWidth`, clases CSS auxiliares y color `currentColor`).
 
 ---
 

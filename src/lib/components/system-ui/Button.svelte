@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { Loader2 } from '@lucide/svelte';
   import type { ButtonSize, ButtonVariant } from '$lib/types/system-ui';
 
   export let variant: ButtonVariant = 'primary';
@@ -31,7 +32,9 @@
   on:click={handleClick}
 >
   {#if loading}
-    <span class="ui-btn-spinner" aria-hidden="true">⏳</span>
+    <span class="ui-btn-spinner" aria-hidden="true">
+      <Loader2 size={size === 'sm' ? 13 : size === 'lg' ? 18 : 15} class="ui-spin" />
+    </span>
   {/if}
   <slot />
 </button>
@@ -214,8 +217,23 @@
   }
 
   .ui-btn-spinner {
-    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     line-height: 1;
+  }
+
+  :global(.ui-spin) {
+    animation: ui-spin 1s linear infinite;
+  }
+
+  @keyframes ui-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>
 

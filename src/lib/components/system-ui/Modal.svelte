@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { X } from '@lucide/svelte';
 
   export let open = false;
   export let title: string | undefined = undefined;
@@ -63,7 +64,7 @@
               aria-label="Cerrar ventana"
               on:click={requestClose}
             >
-              ✕
+              <X size={16} />
             </button>
           {/if}
         </div>
@@ -75,7 +76,7 @@
           aria-label="Cerrar ventana"
           on:click={requestClose}
         >
-          ✕
+          <X size={16} />
         </button>
       {/if}
 

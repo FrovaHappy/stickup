@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Search, X, Tag, Type, Clock } from '@lucide/svelte';
   import type { Emote } from '$lib/types/emote';
   import emotes, {
     allTags,
@@ -210,20 +211,9 @@
       on:focus={() => (isOpen = true)}
       on:keydown={handleKeydown}
     >
-      <svg
-        slot="leading"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
+      <span slot="leading" class="search-leading-icon">
+        <Search size={18} />
+      </span>
 
       <svelte:fragment slot="trailing">
         {#if hasActiveFilters}
@@ -240,7 +230,7 @@
               clearAllFilters();
             }}
           >
-            ✕
+            <X size={14} />
           </Button>
         {/if}
       </svelte:fragment>
@@ -473,11 +463,11 @@
                 >
                   <span class="recent-icon">
                     {#if item.type === 'Tag'}
-                      🏷️
+                      <Tag size={13} />
                     {:else if item.type === 'Nombre'}
-                      🔤
+                      <Type size={13} />
                     {:else}
-                      🕒
+                      <Clock size={13} />
                     {/if}
                   </span>
                   <span class="recent-query">{item.query}</span>
@@ -493,7 +483,7 @@
                     removeRecentSearch(item);
                   }}
                 >
-                  ✕
+                  <X size={14} />
                 </Button>
               </div>
             {/each}
@@ -577,9 +567,19 @@
     cursor: pointer;
     text-align: left;
   }
+  .search-leading-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+  }
   .recent-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 14px;
     line-height: 1;
+    color: #9ca3af;
   }
   .recent-query {
     flex: 1;
