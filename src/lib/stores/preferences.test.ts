@@ -30,7 +30,7 @@ describe('preferences store and sorting helpers', () => {
   });
 
   it('updates and holds grid size', () => {
-    let current;
+    let current: string | undefined;
     const unsub = gridSize.subscribe((v) => (current = v));
     expect(current).toBe('medium');
 
@@ -43,7 +43,7 @@ describe('preferences store and sorting helpers', () => {
   });
 
   it('updates and holds sort option', () => {
-    let current;
+    let current: string | undefined;
     const unsub = sortOption.subscribe((v) => (current = v));
     expect(current).toBe('date-desc');
 

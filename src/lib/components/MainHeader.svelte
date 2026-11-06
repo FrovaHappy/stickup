@@ -58,6 +58,7 @@
 
   $: currentSortItem =
     SORT_ITEMS.find((s) => s.id === $sortOption) ?? SORT_ITEMS[0];
+  $: CurrentSortIcon = currentSortItem.icon;
 
   const GRID_SIZES: { id: GridSize; label: string; desc: string }[] = [
     { id: "small", label: "Pequeño", desc: "Vista compacta" },
@@ -134,13 +135,20 @@
         aria-label={`Ordenar: ${currentSortItem.label}`}
         on:click={toggleSortMenu}
       >
-        <svelte:component this={currentSortItem.icon} size={20} strokeWidth={2} />
+        <CurrentSortIcon size={20} strokeWidth={2} />
       </button>
 
       {#if sortMenuOpen}
-        <div class="dropdown-popover sort-popover" on:click|stopPropagation role="menu">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+        <div
+          class="dropdown-popover sort-popover"
+          on:click|stopPropagation
+          role="menu"
+          tabindex="-1"
+        >
           <div class="popover-header">Ordenar por</div>
           {#each SORT_ITEMS as opt}
+            {@const OptionIcon = opt.icon}
             <button
               type="button"
               class="popover-item"
@@ -149,8 +157,7 @@
               on:click={() => selectSort(opt.id)}
             >
               <div class="popover-item-left">
-                <svelte:component
-                  this={opt.icon}
+                <OptionIcon
                   size={18}
                   strokeWidth={2}
                   class={`sort-option-icon ${$sortOption === opt.id ? "is-active" : ""}`}
@@ -183,10 +190,12 @@
       </button>
 
       {#if gridMenuOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
         <div
           class="dropdown-popover right-aligned"
           on:click|stopPropagation
           role="menu"
+          tabindex="-1"
         >
           <div class="popover-header">Tamaño del grid</div>
           {#each GRID_SIZES as size}

@@ -106,6 +106,7 @@
                       type="button"
                       class="remove-size-btn"
                       title={`Eliminar ${custom.label}`}
+                      aria-label={`Eliminar ${custom.label}`}
                       on:click={() => handleRemoveSize(custom.value, custom.label)}
                     >
                       ×
