@@ -1,23 +1,23 @@
 <script lang="ts">
-  import { Search, X, ArrowDownAZ, Grid2x2, Check } from '@lucide/svelte';
+  import { Search, X, ArrowDownAZ, Grid2x2, Check } from "@lucide/svelte";
   import {
     gridSize,
     setGridSize,
     sortOption,
     setSortOption,
-    SORT_OPTIONS
-  } from '$lib/stores/preferences';
-  import type { GridSize, SortOption } from '$lib/types/preferences';
+    SORT_OPTIONS,
+  } from "$lib/stores/preferences";
+  import type { GridSize, SortOption } from "$lib/types/preferences";
 
-  export let searchQuery = '';
+  export let searchQuery = "";
 
   let sortMenuOpen = false;
   let gridMenuOpen = false;
 
   const GRID_SIZES: { id: GridSize; label: string; desc: string }[] = [
-    { id: 'small', label: 'Pequeño', desc: 'Vista compacta' },
-    { id: 'medium', label: 'Mediano', desc: 'Tamaño estándar' },
-    { id: 'large', label: 'Grande', desc: 'Vista detallada' }
+    { id: "small", label: "Pequeño", desc: "Vista compacta" },
+    { id: "medium", label: "Mediano", desc: "Tamaño estándar" },
+    { id: "large", label: "Grande", desc: "Vista detallada" },
   ];
 
   function toggleSortMenu(e: MouseEvent) {
@@ -69,7 +69,7 @@
           class="clear-btn"
           title="Borrar búsqueda"
           aria-label="Borrar búsqueda"
-          on:click={() => (searchQuery = '')}
+          on:click={() => (searchQuery = "")}
         >
           <X size={14} />
         </button>
@@ -127,7 +127,11 @@
       </button>
 
       {#if gridMenuOpen}
-        <div class="dropdown-popover right-aligned" on:click|stopPropagation role="menu">
+        <div
+          class="dropdown-popover right-aligned"
+          on:click|stopPropagation
+          role="menu"
+        >
           <div class="popover-header">Tamaño del grid</div>
           {#each GRID_SIZES as size}
             <button
@@ -155,12 +159,13 @@
 <style>
   .main-header {
     width: 100%;
-    height: 64px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 24px;
-    background: transparent;
+    padding: 18px 24px;
+    background: rgba(26, 26, 29, 0.82);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     position: sticky;
     top: 0;
     z-index: 15;
@@ -347,4 +352,3 @@
     color: #71717a;
   }
 </style>
-
