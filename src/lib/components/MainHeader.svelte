@@ -1,11 +1,20 @@
 <script lang="ts">
-  import { Search, X, ArrowDownAZ, Grid2x2, Check } from "@lucide/svelte";
+  import {
+    Search,
+    X,
+    ArrowDownAZ,
+    ArrowUpZA,
+    CalendarArrowDown,
+    CalendarArrowUp,
+    Flame,
+    Grid2x2,
+    Check
+  } from "@lucide/svelte";
   import {
     gridSize,
     setGridSize,
     sortOption,
     setSortOption,
-    SORT_OPTIONS,
   } from "$lib/stores/preferences";
   import type { GridSize, SortOption } from "$lib/types/preferences";
 
@@ -13,6 +22,42 @@
 
   let sortMenuOpen = false;
   let gridMenuOpen = false;
+
+  const SORT_ITEMS = [
+    {
+      id: "date-desc" as SortOption,
+      label: "Más recientes",
+      icon: CalendarArrowDown,
+      desc: "Fecha descendente",
+    },
+    {
+      id: "date-asc" as SortOption,
+      label: "Más antiguos",
+      icon: CalendarArrowUp,
+      desc: "Fecha ascendente",
+    },
+    {
+      id: "name-asc" as SortOption,
+      label: "Nombre (A - Z)",
+      icon: ArrowDownAZ,
+      desc: "Alfabético ascendente",
+    },
+    {
+      id: "name-desc" as SortOption,
+      label: "Nombre (Z - A)",
+      icon: ArrowUpZA,
+      desc: "Alfabético descendente",
+    },
+    {
+      id: "copies-desc" as SortOption,
+      label: "Más usados / Hot",
+      icon: Flame,
+      desc: "Mayor cantidad de copias",
+    },
+  ];
+
+  $: currentSortItem =
+    SORT_ITEMS.find((s) => s.id === $sortOption) ?? SORT_ITEMS[0];
 
   const GRID_SIZES: { id: GridSize; label: string; desc: string }[] = [
     { id: "small", label: "Pequeño", desc: "Vista compacta" },
@@ -85,17 +130,17 @@
         type="button"
         class="action-btn"
         class:active={sortMenuOpen}
-        title="Ordenar emotes"
-        aria-label="Ordenar emotes"
+        title={`Ordenar: ${currentSortItem.label}`}
+        aria-label={`Ordenar: ${currentSortItem.label}`}
         on:click={toggleSortMenu}
       >
-        <ArrowDownAZ size={20} strokeWidth={2} />
+        <svelte:component this={currentSortItem.icon} size={20} strokeWidth={2} />
       </button>
 
       {#if sortMenuOpen}
-        <div class="dropdown-popover" on:click|stopPropagation role="menu">
+        <div class="dropdown-popover sort-popover" on:click|stopPropagation role="menu">
           <div class="popover-header">Ordenar por</div>
-          {#each SORT_OPTIONS as opt}
+          {#each SORT_ITEMS as opt}
             <button
               type="button"
               class="popover-item"
@@ -103,7 +148,18 @@
               role="menuitem"
               on:click={() => selectSort(opt.id)}
             >
-              <span>{opt.label}</span>
+              <div class="popover-item-left">
+                <svelte:component
+                  this={opt.icon}
+                  size={18}
+                  strokeWidth={2}
+                  class={`sort-option-icon ${$sortOption === opt.id ? "is-active" : ""}`}
+                />
+                <div class="item-text">
+                  <span class="item-title">{opt.label}</span>
+                  <span class="item-desc">{opt.desc}</span>
+                </div>
+              </div>
               {#if $sortOption === opt.id}
                 <Check size={16} class="check-icon" />
               {/if}
@@ -296,6 +352,10 @@
     gap: 2px;
   }
 
+  .dropdown-popover.sort-popover {
+    min-width: 240px;
+  }
+
   .popover-header {
     padding: 8px 10px 4px 10px;
     font-size: 11px;
@@ -326,8 +386,29 @@
   }
 
   .popover-item.selected {
+    background: rgba(250, 204, 21, 0.08);
     color: #facc15;
     font-weight: 500;
+  }
+
+  .popover-item-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .popover-item :global(.sort-option-icon) {
+    color: #a1a1aa;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+  }
+
+  .popover-item:hover :global(.sort-option-icon) {
+    color: #f4f4f5;
+  }
+
+  .popover-item.selected :global(.sort-option-icon.is-active) {
+    color: #facc15;
   }
 
   .popover-item :global(.check-icon) {

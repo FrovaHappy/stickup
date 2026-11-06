@@ -45,3 +45,4 @@
 - Se preservan todos los atajos de teclado globales (Ctrl+C para copiar emote sobre el que está el cursor, Ctrl+V para pegar y cargar nuevo emote).
 - El scrollbar amarillo se implementa a nivel global mediante reglas CSS nativas (`::-webkit-scrollbar-thumb`).
 - El header superior pegajoso (`MainHeader.svelte`) implementa fondo translúcido con desenfoque (`backdrop-filter: blur(16px)`). Se configuró `display: contents` en `.home-view` y se desvinculó de un contenedor flex acotado para garantizar que `position: sticky` persista indefinidamente a lo largo de todo el scroll sin importar la cantidad de viewports recorridos.
+- El botón de ordenamiento en el header muestra de forma dinámica el icono correspondiente a la opción actualmente seleccionada (`CalendarArrowDown`, `CalendarArrowUp`, `ArrowDownAZ`, `ArrowUpZA`, `Flame`), y el menú desplegable asocia a cada acción su icono, descripción y resaltado activo.
