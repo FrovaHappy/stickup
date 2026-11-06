@@ -186,8 +186,6 @@
     height: 100vh;
     overflow-y: auto;
     overflow-x: hidden;
-    display: flex;
-    flex-direction: column;
     position: relative;
     background-color: #1c1c1f;
   }

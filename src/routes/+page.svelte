@@ -196,14 +196,10 @@
 
 <style>
   .home-view {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    min-height: 100%;
+    display: contents;
   }
 
   .grid-container {
     width: 100%;
-    flex: 1;
   }
 </style>
