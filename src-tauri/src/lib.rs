@@ -3,13 +3,23 @@ mod commands;
 mod db;
 mod models;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|_app| {
+        .setup(|app| {
             // Asegura la base de datos y crea la copia automática por actualización antes de iniciar
             let _ = db::ensure_db();
+
+            // Asegura que la ventana y barra de tareas carguen el icono activo en desarrollo
+            if let Some(icon) = app.default_window_icon() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_icon(icon.clone());
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
