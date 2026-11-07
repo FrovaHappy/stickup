@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { page } from '$app/stores';
-  import { House, Settings, Plus } from '@lucide/svelte';
-  import { Logo, Toast } from '$lib/components/system-ui';
-  import AddEmoteModal from '$lib/components/AddEmoteModal.svelte';
+  import "../global.css";
+  import { page } from "$app/stores";
+  import { House, Settings, Plus } from "@lucide/svelte";
+  import { Logo, Toast } from "$lib/components/system-ui";
+  import AddEmoteModal from "$lib/components/AddEmoteModal.svelte";
 
   let addModalOpen = false;
 </script>
@@ -13,7 +14,7 @@
       <a
         href="/"
         class="nav-btn"
-        class:active={$page.url.pathname === '/'}
+        class:active={$page.url.pathname === "/"}
         title="Inicio"
         aria-label="Inicio"
       >
@@ -37,7 +38,7 @@
       <a
         href="/settings"
         class="nav-btn"
-        class:active={$page.url.pathname.startsWith('/settings')}
+        class:active={$page.url.pathname.startsWith("/settings")}
         title="Configuración"
         aria-label="Configuración"
       >
@@ -59,65 +60,20 @@
 </div>
 
 <style>
-  :global(:root) {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
-    color: #e4e4e7;
-    background-color: #1a1a1c;
-    color-scheme: dark;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    box-sizing: border-box;
-  }
-
-  :global(*),
-  :global(*::before),
-  :global(*::after) {
-    box-sizing: inherit;
-  }
-
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background-color: #1a1a1c;
-    user-select: none;
-  }
-
-  /* Custom Yellow Scrollbar as in reference */
-  :global(::-webkit-scrollbar) {
-    width: 8px;
-    height: 8px;
-  }
-
-  :global(::-webkit-scrollbar-track) {
-    background: transparent;
-  }
-
-  :global(::-webkit-scrollbar-thumb) {
-    background: #eab308;
-    border-radius: 4px;
-  }
-
-  :global(::-webkit-scrollbar-thumb:hover) {
-    background: #facc15;
-  }
-
   .app-layout {
     display: flex;
     width: 100vw;
     height: 100vh;
     overflow: hidden;
-    background-color: #1a1a1c;
+    background-color: var(--color-bg-app);
   }
 
   .sidebar {
     width: 58px;
     min-width: 58px;
     height: 100vh;
-    background-color: #141416;
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    background-color: var(--color-bg-sidebar);
+    border-right: 1px solid var(--color-border-light);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -142,7 +98,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #71717a;
+    color: var(--color-text-dim);
     text-decoration: none;
     transition: all 0.2s ease;
     background: transparent;
@@ -151,18 +107,18 @@
   }
 
   .nav-btn:hover {
-    color: #f4f4f5;
-    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text-main);
+    background: var(--color-bg-hover);
   }
 
   .nav-btn.active {
-    color: #facc15;
-    background: rgba(250, 204, 21, 0.12);
+    color: var(--color-orange-primary);
+    background: rgba(var(--color-orange-rgb), 0.12);
   }
 
   .nav-btn.add-btn:hover {
-    color: #facc15;
-    background: rgba(250, 204, 21, 0.1);
+    color: var(--color-orange-primary);
+    background: rgba(var(--color-orange-rgb), 0.1);
   }
 
   .brand-badge {
@@ -187,6 +143,6 @@
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
-    background-color: #1c1c1f;
+    background-color: var(--color-bg-surface);
   }
 </style>

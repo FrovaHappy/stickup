@@ -3,7 +3,7 @@
   import { ArrowLeft, Database, Sliders, Info, ShieldCheck, Monitor } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
-  import { Button, Card, Badge, Logo } from '$lib/components/system-ui';
+  import { Button, Badge, Logo } from '$lib/components/system-ui';
   import { customSizes, addCustomSize, removeCustomSize, DEFAULT_SIZE_PRESETS } from '$lib/stores/sizes';
   import { toast } from '$lib/stores/toast';
   import {
@@ -44,19 +44,25 @@
 </script>
 
 <div class="settings-page">
+  <!-- Header fijo con estilo translúcido idéntico al patrón de Inicio -->
   <header class="settings-header">
-    <div class="header-left">
-      <a href="/" class="back-link" title="Volver a Emotes">
-        <ArrowLeft size={18} />
-        <span>Volver a Emotes</span>
-      </a>
-      <h1 class="page-title">Configuración</h1>
-      <p class="page-subtitle">Administra el almacenamiento, copias de seguridad y preferencias de StickUp.</p>
+    <div class="header-inner">
+      <div class="header-nav">
+        <a href="/" class="back-link" title="Volver a Emotes">
+          <ArrowLeft size={16} />
+          <span>Volver a Emotes</span>
+        </a>
+      </div>
+      <div class="header-title-block">
+        <h1 class="page-title">Configuración</h1>
+        <p class="page-subtitle">Administra el almacenamiento, copias de seguridad y preferencias de StickUp.</p>
+      </div>
     </div>
   </header>
 
+  <!-- Contenido con ancho unificado y sin background en las tarjetas -->
   <div class="settings-content">
-    <!-- Sección de Almacenamiento y Base de Datos -->
+    <!-- Sección de Almacenamiento y Respaldos (Información expandida con copias hechas) -->
     <section class="settings-section">
       <div class="section-title-row">
         <Database size={18} class="section-icon" />
@@ -65,19 +71,19 @@
       <StorageSettings />
     </section>
 
-    <!-- Sección de Comportamiento del Sistema -->
+    <!-- Sección de Comportamiento del Sistema (Sin background de tarjeta) -->
     <section class="settings-section">
       <div class="section-title-row">
         <Monitor size={18} class="section-icon" />
         <h2>Comportamiento del Sistema</h2>
       </div>
-      <Card padding="md">
-        <div class="system-toggles-card">
+      <div class="section-card">
+        <div class="system-toggles">
           <div class="toggle-row">
             <div class="toggle-info">
               <span class="toggle-title">Iniciar al arrancar el sistema</span>
               <p class="toggle-desc">
-                Inicia StickUp automáticamente al encender tu equipo o iniciar sesión.
+                Inicia StickUp automáticamente al encender tu equipo o iniciar sesión en segundo plano.
               </p>
             </div>
             <button
@@ -100,7 +106,7 @@
             <div class="toggle-info">
               <span class="toggle-title">Minimizar a la bandeja del sistema</span>
               <p class="toggle-desc">
-                Al hacer clic en cerrar (×), mantiene StickUp ejecutándose en segundo plano en la bandeja del sistema.
+                Al hacer clic en cerrar (×), mantiene StickUp ejecutándose en segundo plano en la bandeja de iconos del sistema.
               </p>
             </div>
             <button
@@ -117,32 +123,37 @@
             </button>
           </div>
         </div>
-      </Card>
+      </div>
     </section>
 
-    <!-- Sección de Mantenimiento y Sincronización -->
+    <!-- Sección de Mantenimiento y Sincronización (Sin background de tarjeta) -->
     <section class="settings-section">
       <div class="section-title-row">
         <ShieldCheck size={18} class="section-icon" />
         <h2>Sincronización e Importación</h2>
       </div>
-      <Card padding="md">
-        <div class="import-card-body">
-          <p class="section-desc">
-            Agrega nuevos emotes o sincroniza el directorio con la base de datos convirtiendo imágenes automáticamente a formato WebP optimizado.
-          </p>
-          <ImportButton />
+      <div class="section-card">
+        <div class="sync-row">
+          <div class="sync-info">
+            <span class="sync-title">Sincronizar y optimizar emotes</span>
+            <p class="section-desc">
+              Agrega nuevos emotes o sincroniza el directorio con la base de datos convirtiendo imágenes automáticamente a formato WebP optimizado.
+            </p>
+          </div>
+          <div class="sync-action">
+            <ImportButton />
+          </div>
         </div>
-      </Card>
+      </div>
     </section>
 
-    <!-- Sección de Tamaños de Copia Personalizados -->
+    <!-- Sección de Tamaños de Portapapeles Personalizados (Sin background de tarjeta) -->
     <section class="settings-section">
       <div class="section-title-row">
         <Sliders size={18} class="section-icon" />
         <h2>Tamaños de Portapapeles Personalizados</h2>
       </div>
-      <Card padding="md">
+      <div class="section-card">
         <p class="section-desc">
           Configura dimensiones personalizadas para copiar emotes con tamaños específicos desde el menú contextual.
         </p>
@@ -205,22 +216,22 @@
                 class="num-input"
                 bind:value={newSizeHeight}
               />
-              <Button variant="secondary" size="sm" on:click={handleAddSize}>
+              <Button variant="primary" size="sm" on:click={handleAddSize}>
                 Añadir tamaño
               </Button>
             </div>
           </div>
         </div>
-      </Card>
+      </div>
     </section>
 
-    <!-- Acerca de StickUp -->
+    <!-- Acerca de StickUp (Sin background de tarjeta) -->
     <section class="settings-section">
       <div class="section-title-row">
         <Info size={18} class="section-icon" />
         <h2>Acerca de StickUp</h2>
       </div>
-      <Card padding="md">
+      <div class="section-card">
         <div class="about-card">
           <div class="about-header">
             <Logo size={44} interactive />
@@ -235,7 +246,7 @@
             </div>
           </div>
         </div>
-      </Card>
+      </div>
     </section>
   </div>
 </div>
@@ -243,20 +254,37 @@
 <style>
   .settings-page {
     width: 100%;
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 32px 24px 64px 24px;
+    min-height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 28px;
   }
 
+  /* Header sticky idéntico al patrón de Inicio */
   .settings-header {
+    width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: rgba(26, 26, 29, 0.82);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 16px 28px;
+    box-sizing: border-box;
+  }
+
+  .header-inner {
+    max-width: 960px;
+    width: 100%;
+    margin: 0 auto;
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 18px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
   }
 
   .back-link {
@@ -267,34 +295,46 @@
     text-decoration: none;
     font-size: 13px;
     font-weight: 500;
-    margin-bottom: 10px;
     transition: color 0.15s ease;
   }
 
   .back-link:hover {
-    color: #facc15;
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .header-title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .page-title {
     margin: 0;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
     color: #f4f4f5;
   }
 
   .page-subtitle {
-    margin: 4px 0 0 0;
+    margin: 0;
     font-size: 13px;
     color: #a1a1aa;
   }
 
+  /* Contenido principal con ancho unificado y padding coherente */
   .settings-content {
+    max-width: 960px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 24px 28px 64px 28px;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 28px;
+    box-sizing: border-box;
   }
 
   .settings-section {
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -308,13 +348,23 @@
   }
 
   .section-title-row :global(.section-icon) {
-    color: #facc15;
+    color: var(--color-orange-primary, #f97316);
   }
 
   .section-title-row h2 {
     margin: 0;
-    font-size: 16px;
+    font-size: 15.5px;
     font-weight: 600;
+  }
+
+  /* Tarjeta sin fondo (background transparente) con borde sutil */
+  .section-card {
+    width: 100%;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-sizing: border-box;
   }
 
   .section-desc {
@@ -324,12 +374,35 @@
     line-height: 1.5;
   }
 
-  .import-card-body {
+  /* Sincronización e importación */
+  .sync-row {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    width: 100%;
   }
 
+  .sync-info {
+    flex: 1;
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sync-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f4f4f5;
+  }
+
+  .sync-action {
+    flex-shrink: 0;
+  }
+
+  /* Tamaños personalizados */
   .sizes-list {
     display: flex;
     flex-direction: column;
@@ -343,7 +416,7 @@
   }
 
   .sizes-group-title {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 600;
     color: #71717a;
     text-transform: uppercase;
@@ -423,7 +496,7 @@
 
   .num-input:focus {
     outline: none;
-    border-color: #facc15;
+    border-color: var(--color-orange-primary, #f97316);
   }
 
   .x-separator {
@@ -431,6 +504,7 @@
     font-weight: bold;
   }
 
+  /* Acerca de */
   .about-card {
     display: flex;
     flex-direction: column;
@@ -463,10 +537,11 @@
     line-height: 1.5;
   }
 
-  .system-toggles-card {
+  /* Toggles del sistema */
+  .system-toggles {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
   }
 
   .toggle-row {
@@ -517,12 +592,12 @@
   }
 
   .toggle-switch:focus-visible {
-    outline: 2px solid #facc15;
+    outline: 2px solid var(--color-orange-primary, #f97316);
     outline-offset: 2px;
   }
 
   .toggle-switch.active {
-    background: #facc15;
+    background: var(--color-orange-primary, #f97316);
   }
 
   .toggle-thumb {
@@ -545,4 +620,3 @@
     cursor: not-allowed;
   }
 </style>
-

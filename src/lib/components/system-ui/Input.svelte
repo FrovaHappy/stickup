@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  import type { InputVariant } from '$lib/types/system-ui';
+  import { createEventDispatcher } from "svelte";
+  import type { InputVariant } from "$lib/types/system-ui";
 
-  export let value = '';
+  export let value = "";
   export let label: string | undefined = undefined;
-  export let type: 'text' | 'url' | 'search' = 'text';
-  export let placeholder = '';
+  export let type: "text" | "url" | "search" = "text";
+  export let placeholder = "";
   export let readonly = false;
   export let disabled = false;
   export let required = false;
   export let active = false;
-  export let variant: InputVariant = 'default';
+  export let variant: InputVariant = "default";
   export let title: string | undefined = undefined;
   export let inputElement: HTMLInputElement | null = null;
 
@@ -36,7 +36,9 @@
   {/if}
 
   <div
-    class="ui-input-wrapper variant-{variant} {active ? 'is-active' : ''} {disabled ? 'is-disabled' : ''}"
+    class="ui-input-wrapper variant-{variant} {active
+      ? 'is-active'
+      : ''} {disabled ? 'is-disabled' : ''}"
     on:click={() => inputElement?.focus()}
     role="presentation"
   >
@@ -56,10 +58,10 @@
       {required}
       {title}
       class="ui-input-field {readonly ? 'is-readonly' : ''}"
-      on:focus={(e) => dispatch('focus', e)}
-      on:blur={(e) => dispatch('blur', e)}
-      on:keydown={(e) => dispatch('keydown', e)}
-      on:input={(e) => dispatch('input', e)}
+      on:focus={(e) => dispatch("focus", e)}
+      on:blur={(e) => dispatch("blur", e)}
+      on:keydown={(e) => dispatch("keydown", e)}
+      on:input={(e) => dispatch("input", e)}
     />
 
     {#if $$slots.trailing}
@@ -114,8 +116,8 @@
 
   .ui-input-wrapper:focus-within,
   .ui-input-wrapper.is-active {
-    border-color: #6366f1;
-    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.16);
+    border-color: var(--color-orange-primary);
+    box-shadow: 0 4px 14px rgba(var(--color-orange-rgb), 0.2);
   }
 
   .ui-input-wrapper.is-disabled {
@@ -163,4 +165,3 @@
     color: #9ca3af;
   }
 </style>
-

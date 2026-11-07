@@ -2,6 +2,7 @@ export type ButtonVariant =
   | 'primary'
   | 'secondary'
   | 'accent'
+  | 'warning'
   | 'success'
   | 'danger'
   | 'outline'

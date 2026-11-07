@@ -439,7 +439,7 @@
     </div>
 
     <Button
-      variant="accent"
+      variant="primary"
       size="lg"
       fullWidth
       on:click={copyImageToClipboard}

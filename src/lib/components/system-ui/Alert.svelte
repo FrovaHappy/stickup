@@ -73,13 +73,13 @@
   }
 
   .variant-warning {
-    background: rgba(245, 158, 11, 0.14);
-    border: 1px solid rgba(245, 158, 11, 0.35);
-    color: #d97706;
+    background: var(--color-warning-bg, rgba(234, 88, 12, 0.14));
+    border: 1px solid var(--color-warning-border, rgba(234, 88, 12, 0.35));
+    color: var(--color-warning-primary, #ea580c);
   }
   @media (prefers-color-scheme: dark) {
     .variant-warning {
-      color: #fbbf24;
+      color: var(--color-warning-light, #fb923c);
     }
   }
 

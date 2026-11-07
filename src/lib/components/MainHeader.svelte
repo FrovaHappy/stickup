@@ -8,7 +8,7 @@
     CalendarArrowUp,
     Flame,
     Grid2x2,
-    Check
+    Check,
   } from "@lucide/svelte";
   import {
     gridSize,
@@ -284,9 +284,9 @@
   }
 
   .search-pill:focus-within {
-    border-color: #facc15;
+    border-color: var(--color-orange-primary, #f97316);
     background: #29292d;
-    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.15);
+    box-shadow: 0 0 0 2px rgba(var(--color-orange-rgb, 249, 115, 22), 0.18);
   }
 
   .search-pill :global(.search-icon) {
@@ -355,9 +355,9 @@
   }
 
   .action-btn.active {
-    color: #facc15;
-    background: rgba(250, 204, 21, 0.12);
-    border-color: rgba(250, 204, 21, 0.25);
+    color: var(--color-orange-primary, #f97316);
+    background: rgba(var(--color-orange-rgb, 249, 115, 22), 0.12);
+    border-color: rgba(var(--color-orange-rgb, 249, 115, 22), 0.28);
   }
 
   .dropdown-popover {
@@ -410,8 +410,8 @@
   }
 
   .popover-item.selected {
-    background: rgba(250, 204, 21, 0.08);
-    color: #facc15;
+    background: rgba(var(--color-orange-rgb, 249, 115, 22), 0.08);
+    color: var(--color-orange-primary, #f97316);
     font-weight: 500;
   }
 
@@ -432,11 +432,11 @@
   }
 
   .popover-item.selected :global(.sort-option-icon.is-active) {
-    color: #facc15;
+    color: var(--color-orange-primary, #f97316);
   }
 
   .popover-item :global(.check-icon) {
-    color: #facc15;
+    color: var(--color-orange-primary, #f97316);
     margin-left: 8px;
     flex-shrink: 0;
   }

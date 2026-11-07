@@ -1,15 +1,17 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher } from "svelte";
 
   export let isDragging = false;
   export let disabled = false;
-  export let title = 'Arrastra y suelta tus archivos o carpetas aquí, o usa los botones de abajo.';
-  export let draggingTitle = '¡Suelta tus archivos o carpetas aquí para importarlos!';
+  export let title =
+    "Arrastra y suelta tus archivos o carpetas aquí, o usa los botones de abajo.";
+  export let draggingTitle =
+    "¡Suelta tus archivos o carpetas aquí para importarlos!";
   export let subtitle =
-    'Soporta 1 o varios archivos (.png, .jpg, .webp, .gif), carpetas completas, portapapeles y URL';
+    "Soporta 1 o varios archivos (.png, .jpg, .webp, .gif), carpetas completas, portapapeles y URL";
   export let showDivider = true;
-  export let dividerText = 'OR';
-  export let ariaLabel = 'Zona para arrastrar y soltar archivos';
+  export let dividerText = "OR";
+  export let ariaLabel = "Zona para arrastrar y soltar archivos";
 
   const dispatch = createEventDispatcher<{
     drop: DragEvent;
@@ -21,25 +23,27 @@
     e.preventDefault();
     if (disabled) return;
     isDragging = true;
-    dispatch('dragenter', e);
+    dispatch("dragenter", e);
   }
 
   function handleDragLeave(e: DragEvent) {
     e.preventDefault();
     isDragging = false;
-    dispatch('dragleave', e);
+    dispatch("dragleave", e);
   }
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();
     isDragging = false;
     if (disabled) return;
-    dispatch('drop', e);
+    dispatch("drop", e);
   }
 </script>
 
 <div
-  class="ui-dropzone {isDragging ? 'is-dragging' : ''} {disabled ? 'is-disabled' : ''}"
+  class="ui-dropzone {isDragging ? 'is-dragging' : ''} {disabled
+    ? 'is-disabled'
+    : ''}"
   on:dragover={handleDragOver}
   on:dragleave={handleDragLeave}
   on:drop={handleDrop}
@@ -109,8 +113,8 @@
   }
 
   .ui-dropzone.is-dragging {
-    border-color: #3b5bff;
-    background: rgba(59, 91, 255, 0.08);
+    border-color: var(--color-orange-primary, #f97316);
+    background: rgba(var(--color-orange-rgb, 249, 115, 22), 0.08);
     transform: scale(1.01);
   }
 
@@ -124,8 +128,8 @@
       border-color: rgba(255, 255, 255, 0.16);
     }
     .ui-dropzone.is-dragging {
-      border-color: #4c6ef5;
-      background: rgba(76, 110, 245, 0.14);
+      border-color: var(--color-orange-primary, #f97316);
+      background: rgba(var(--color-orange-rgb, 249, 115, 22), 0.14);
     }
   }
 
@@ -187,4 +191,3 @@
     letter-spacing: 0.5px;
   }
 </style>
-

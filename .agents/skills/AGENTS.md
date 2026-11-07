@@ -85,3 +85,30 @@ src/
 1. Verificar que compile sin error la aplicacion:
    `pnpm run prebuild`
 2. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `odd/tasks/{feature-slug}.md` si la tarea fue sustancial.
+
+---
+
+
+## 5. Guía de Diseño y Sistema de Color (Design System)
+
+La interfaz se rige por un tema oscuro (`#1a1a1c` / `#1c1c1f`) con **énfasis visual en el Naranja**. Todas las variables globales residen centralizadas en `src/global.css`.
+
+### 5.1 Variables Centrales (`src/global.css`)
+
+- **Naranja Primario:** `--color-orange-primary: #f97316;` (hover: `--color-orange-hover: #ea580c;`, rgb: `249, 115, 22`).
+- **Warning Rojo-Anaranjado:** `--color-warning-primary: #ea580c;` (bg translúcido: `rgba(234, 88, 12, 0.14)`).
+- **Superficies:** `--color-bg-app: #1a1a1c;`, `--color-bg-surface: #1c1c1f;`, `--color-bg-sidebar: #141416;`.
+- **Bordes sutiles:** `--color-border-subtle: rgba(255, 255, 255, 0.08);`.
+
+### 5.2 Estándar de Botones (`Button.svelte`)
+
+- **`primary`:** Background naranja (`#f97316`), texto blanco, sombra naranja suave.
+- **`secondary`:** Contorno naranja (`1px solid #f97316`), fondo naranja con 10% de opacidad (`rgba(249, 115, 22, 0.10)`), texto `#fb923c` (hover 18% opacidad, texto blanco).
+- **`warning`:** Fondo y contorno en rojo anaranjado armónico (`#ea580c`), hover `#c2410c`.
+- **`outline` / `ghost` / `danger`:** Para acciones neutras, cancelaciones y eliminaciones respectivamente.
+
+### 5.3 Reglas Clave
+
+1. **Sin fondos pesados:** No usar fondos sólidos en tarjetas o paneles; usar `background: transparent;` con borde `1px solid var(--color-border-subtle);`.
+2. **Focus accesible:** Todo foco por teclado (`:focus-visible`) usa `outline: 2px solid var(--color-orange-primary); outline-offset: 2px;`.
+3. **Zero Hardcoded Colors:** Usar siempre las variables de `global.css` en lugar de colores hexadecimales dispersos.

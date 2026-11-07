@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  import { Loader2 } from '@lucide/svelte';
-  import type { ButtonSize, ButtonVariant } from '$lib/types/system-ui';
+  import { createEventDispatcher } from "svelte";
+  import { Loader2 } from "@lucide/svelte";
+  import type { ButtonSize, ButtonVariant } from "$lib/types/system-ui";
 
-  export let variant: ButtonVariant = 'primary';
-  export let size: ButtonSize = 'md';
-  export let type: 'button' | 'submit' | 'reset' = 'button';
+  export let variant: ButtonVariant = "primary";
+  export let size: ButtonSize = "md";
+  export let type: "button" | "submit" | "reset" = "button";
   export let disabled = false;
   export let loading = false;
   export let fullWidth = false;
@@ -18,13 +18,15 @@
 
   function handleClick(event: MouseEvent) {
     if (disabled || loading) return;
-    dispatch('click', event);
+    dispatch("click", event);
   }
 </script>
 
 <button
   {type}
-  class="ui-btn variant-{variant} size-{size} {fullWidth ? 'full-width' : ''} {active ? 'is-active' : ''} {pill ? 'is-pill' : ''}"
+  class="ui-btn variant-{variant} size-{size} {fullWidth
+    ? 'full-width'
+    : ''} {active ? 'is-active' : ''} {pill ? 'is-pill' : ''}"
   disabled={disabled || loading}
   {title}
   aria-label={ariaLabel}
@@ -33,7 +35,10 @@
 >
   {#if loading}
     <span class="ui-btn-spinner" aria-hidden="true">
-      <Loader2 size={size === 'sm' ? 13 : size === 'lg' ? 18 : 15} class="ui-spin" />
+      <Loader2
+        size={size === "sm" ? 13 : size === "lg" ? 18 : 15}
+        class="ui-spin"
+      />
     </span>
   {/if}
   <slot />
@@ -60,6 +65,11 @@
       transform 0.1s ease,
       box-shadow 0.15s ease,
       opacity 0.15s ease;
+  }
+
+  .ui-btn:focus-visible {
+    outline: 2px solid var(--color-orange-primary, #f97316);
+    outline-offset: 2px;
   }
 
   .ui-btn:active:not(:disabled) {
@@ -99,38 +109,41 @@
 
   /* Variants */
   .variant-primary {
-    background: #3b5bff;
-    color: #ffffff;
-    box-shadow: 0 4px 12px rgba(59, 91, 255, 0.3);
+    background: var(--btn-primary-bg, #f97316);
+    color: var(--btn-primary-color, #ffffff);
+    border-color: transparent;
+    box-shadow: var(--btn-primary-shadow, 0 4px 14px rgba(249, 115, 22, 0.32));
   }
   .variant-primary:hover:not(:disabled) {
-    background: #2f49d1;
+    background: var(--btn-primary-hover-bg, #ea580c);
     transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(59, 91, 255, 0.42);
+    box-shadow: 0 6px 18px rgba(249, 115, 22, 0.42);
   }
 
   .variant-secondary {
-    background: rgba(59, 91, 255, 0.1);
-    color: #3b5bff;
-    border-color: rgba(59, 91, 255, 0.25);
+    background: var(--btn-secondary-bg, rgba(249, 115, 22, 0.1));
+    color: var(--btn-secondary-color, #fb923c);
+    border: 1px solid var(--btn-secondary-border, #f97316);
   }
   .variant-secondary:hover:not(:disabled),
   .variant-secondary.is-active {
-    background: rgba(59, 91, 255, 0.18);
-    border-color: #3b5bff;
+    background: var(--btn-secondary-hover-bg, rgba(249, 115, 22, 0.18));
+    border-color: var(--btn-secondary-hover-border, #ea580c);
+    color: var(--btn-secondary-hover-color, #ffffff);
     transform: translateY(-1px);
   }
-  @media (prefers-color-scheme: dark) {
-    .variant-secondary {
-      background: rgba(76, 110, 245, 0.16);
-      color: #93c5fd;
-      border-color: rgba(76, 110, 245, 0.35);
-    }
-    .variant-secondary:hover:not(:disabled),
-    .variant-secondary.is-active {
-      background: rgba(76, 110, 245, 0.26);
-      color: #ffffff;
-    }
+
+  .variant-warning {
+    background: var(--btn-warning-bg, #ea580c);
+    color: var(--btn-warning-color, #ffffff);
+    border: 1px solid var(--btn-warning-border, #ea580c);
+    box-shadow: var(--btn-warning-shadow, 0 4px 14px rgba(234, 88, 12, 0.35));
+  }
+  .variant-warning:hover:not(:disabled) {
+    background: var(--btn-warning-hover-bg, #c2410c);
+    border-color: #c2410c;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(234, 88, 12, 0.45);
   }
 
   .variant-accent {
@@ -236,4 +249,3 @@
     }
   }
 </style>
-

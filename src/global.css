@@ -1,0 +1,132 @@
+/* ==========================================================================
+   StickUp Global CSS & Design Tokens
+   ========================================================================== */
+
+:root {
+  /* Tipografía y Base */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  box-sizing: border-box;
+
+  /* Superficies y Fondos Tema Oscuro */
+  --color-bg-app: #1a1a1c;
+  --color-bg-surface: #1c1c1f;
+  --color-bg-sidebar: #141416;
+  --color-bg-pill: #242427;
+  --color-bg-input: rgba(0, 0, 0, 0.25);
+  --color-bg-hover: rgba(255, 255, 255, 0.06);
+
+  /* Bordes */
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-light: rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Textos */
+  --color-text-main: #f4f4f5;
+  --color-text-secondary: #e4e4e7;
+  --color-text-muted: #a1a1aa;
+  --color-text-dim: #71717a;
+
+  /* Escala Naranja Oficial StickUp */
+  --color-orange-50: #fff7ed;
+  --color-orange-100: #ffedd5;
+  --color-orange-200: #fed7aa;
+  --color-orange-300: #fdba74;
+  --color-orange-400: #fb923c;
+  --color-orange-500: #f97316;
+  --color-orange-600: #ea580c;
+  --color-orange-700: #c2410c;
+  --color-orange-800: #9a3412;
+  --color-orange-900: #7c2d12;
+  --color-orange-rgb: 249, 115, 22;
+
+  /* Variables Semánticas Naranja */
+  --color-orange-primary: #f97316;
+  --color-orange-hover: #ea580c;
+  --color-orange-active: #c2410c;
+  --color-orange-focus-ring: rgba(249, 115, 22, 0.45);
+
+  /* Warning: Rojo Anaranjado Armónico */
+  --color-warning-rgb: 234, 88, 12;
+  --color-warning-primary: #ea580c;
+  --color-warning-hover: #c2410c;
+  --color-warning-light: #fb923c;
+  --color-warning-bg: rgba(234, 88, 12, 0.14);
+  --color-warning-border: rgba(234, 88, 12, 0.35);
+
+  /* Tokens de Botones */
+  --btn-primary-bg: var(--color-orange-primary);
+  --btn-primary-color: #ffffff;
+  --btn-primary-hover-bg: var(--color-orange-hover);
+  --btn-primary-shadow: 0 4px 14px rgba(249, 115, 22, 0.32);
+
+  --btn-secondary-bg: rgba(var(--color-orange-rgb), 0.10);
+  --btn-secondary-border: var(--color-orange-primary);
+  --btn-secondary-color: #fb923c;
+  --btn-secondary-hover-bg: rgba(var(--color-orange-rgb), 0.18);
+  --btn-secondary-hover-border: var(--color-orange-hover);
+  --btn-secondary-hover-color: #ffffff;
+
+  --btn-warning-bg: var(--color-warning-primary);
+  --btn-warning-color: #ffffff;
+  --btn-warning-border: var(--color-warning-primary);
+  --btn-warning-hover-bg: var(--color-warning-hover);
+  --btn-warning-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #ea580c;
+  --scrollbar-thumb-hover: #f97316;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--color-bg-app);
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+/* Scrollbar Personalizado */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Animaciones globales */
+@keyframes ui-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ui-spin {
+  animation: ui-spin 1s linear infinite;
+}
+

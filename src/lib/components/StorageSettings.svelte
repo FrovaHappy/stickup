@@ -6,19 +6,18 @@
     Save,
     Upload,
     Download,
-    History,
     Database,
     PackageCheck,
     Folder,
     RotateCcw,
     Trash2,
-    Plus
+    HardDrive
   } from '@lucide/svelte';
   import { api } from '$lib/services/api';
-  import { loadEmotes } from '$lib/stores/emotes';
+  import emotes, { loadEmotes } from '$lib/stores/emotes';
   import { toast } from '$lib/stores/toast';
   import { formatFileSize } from '$lib/utils/format';
-  import { Alert, Badge, Button, Card, Modal } from '$lib/components/system-ui';
+  import { Alert, Badge, Button, Modal } from '$lib/components/system-ui';
   import type { BackupInfo } from '$lib/types/backup';
 
   let storagePath = '';
@@ -32,13 +31,12 @@
   let currentDbCount = 0;
   let targetDbCount = 0;
 
-  let showHistoryModal = false;
   let showRestoreConfirmModal = false;
   let showDeleteConfirmModal = false;
   let localBackups: BackupInfo[] = [];
   let backupToRestore: BackupInfo | null = null;
   let backupToDelete: BackupInfo | null = null;
-  let loadingBackups = false;
+  let loadingBackups = true;
   const MAX_BACKUPS = 15;
 
   function showStatus(msg: string, error = false) {
@@ -53,8 +51,11 @@
     try {
       storagePath = await api.getStoragePath();
       appVersion = await api.getAppVersion();
+      await refreshBackupsList();
     } catch (e) {
       console.error('Error al inicializar StorageSettings:', e);
+    } finally {
+      loadingBackups = false;
     }
   });
 
@@ -95,6 +96,7 @@
       pendingTargetPath = null;
       askDbConflict = false;
       await loadEmotes();
+      await refreshBackupsList();
       showStatus(
         migrate
           ? overwriteDb === false
@@ -127,9 +129,7 @@
       const res = await api.createBackup();
       toast.success(`Copia creada: ${res.backup.file_name} (${res.backup.emote_count} emotes)`);
       showStatus(`✓ Copia de seguridad guardada: ${res.backup.file_name}`);
-      if (showHistoryModal) {
-        await refreshBackupsList();
-      }
+      await refreshBackupsList();
     } catch (e: any) {
       const msg = e?.message || e || 'Error al crear copia';
       toast.error(`Error al crear copia: ${msg}`);
@@ -155,6 +155,7 @@
       const res = await api.createBackup(selected);
       toast.success(`Copia exportada: ${res.backup.file_name} (${res.backup.emote_count} emotes)`);
       showStatus(`✓ Copia exportada a: ${res.backup.path}`);
+      await refreshBackupsList();
     } catch (e: any) {
       const msg = e?.message || e || 'Error al exportar copia';
       toast.error(`Error: ${msg}`);
@@ -200,13 +201,6 @@
     }
   }
 
-  async function handleOpenHistory() {
-    loadingBackups = true;
-    showHistoryModal = true;
-    await refreshBackupsList();
-    loadingBackups = false;
-  }
-
   function handleChooseHistoryItem(item: BackupInfo) {
     backupToRestore = item;
     showRestoreConfirmModal = true;
@@ -217,11 +211,11 @@
     const target = backupToRestore;
     isBusy = true;
     showRestoreConfirmModal = false;
-    showHistoryModal = false;
 
     try {
       const res = await api.restoreBackup(target.path);
       await loadEmotes();
+      await refreshBackupsList();
       toast.success(`Base de datos restaurada (${res.restored_emote_count} emotes)`);
       showStatus(
         res.safety_backup_path
@@ -274,24 +268,149 @@
   }
 </script>
 
-<div class="storage-wrapper">
-  <Card padding="md">
-    <div class="info-row">
-      <span class="path-label">💾 Directorio:</span>
-      <span class="path-val" title={storagePath ? `${storagePath} (incluye .store.db)` : ''}>
-        {storagePath ? `${storagePath} (.store.db)` : 'Cargando...'}
-      </span>
-      {#if appVersion}
-        <Badge variant="gray" title={`Versión de StickUp registrada: v${appVersion}`}>v{appVersion}</Badge>
-      {/if}
-      <Button variant="outline" size="sm" disabled={isBusy} on:click={pickStoragePath}>
-        <FolderPen size={14} /> Cambiar ruta
-      </Button>
+<div class="storage-container">
+  <!-- Información expandida de almacenamiento y directorio (sin bg de tarjeta) -->
+  <div class="storage-panel">
+    <div class="panel-main-row">
+      <div class="path-details">
+        <div class="path-title-line">
+          <HardDrive size={15} class="path-icon" />
+          <span class="path-title">Directorio de datos y base de datos:</span>
+        </div>
+        <div class="path-display-box" title={storagePath ? `${storagePath} (.store.db)` : ''}>
+          <span class="path-text">{storagePath || 'Cargando directorio...'}</span>
+          <Badge variant="blue" shape="pill">.store.db</Badge>
+        </div>
+      </div>
+
+      <div class="path-action">
+        <Button variant="outline" size="sm" disabled={isBusy} on:click={pickStoragePath}>
+          <FolderPen size={14} /> Cambiar ruta
+        </Button>
+      </div>
     </div>
 
-    <div class="backup-row">
-      <span class="backup-label">🛡️ Copias de seguridad:</span>
-      <div class="backup-actions">
+    <div class="storage-stats-bar">
+      <div class="stat-item">
+        <span class="status-dot"></span>
+        <span class="stat-label">SQLite Conectado</span>
+      </div>
+      <span class="stat-sep">•</span>
+      <div class="stat-item">
+        <span class="stat-val">{$emotes.length}</span>
+        <span class="stat-label">emotes registrados</span>
+      </div>
+      {#if appVersion}
+        <span class="stat-sep">•</span>
+        <div class="stat-item">
+          <span class="stat-label">Versión de esquema:</span>
+          <Badge variant="gray" shape="pill">v{appVersion}</Badge>
+        </div>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Alertas de migración y conflicto de base de datos -->
+  {#if pendingTargetPath}
+    <div class="prompt-container">
+      {#if askDbConflict}
+        <Alert
+          variant="info"
+          title="⚠️ Ya existe una base de datos (.store.db) en el destino. ¿Cuál deseas conservar?"
+        >
+          <div class="prompt-dest" title={pendingTargetPath}>
+            Destino: <code>{pendingTargetPath}</code>
+          </div>
+          <p class="prompt-desc">
+            Se moverán todas tus imágenes a la nueva carpeta. Elige qué archivo
+            <code>.store.db</code> tendrá prioridad para tus tags, nombres y estadísticas:
+          </p>
+          <svelte:fragment slot="actions">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={isBusy}
+              on:click={() => applyPendingChange(true, true)}
+            >
+              <Database size={14} /> Conservar BD actual ({currentDbCount} emotes)
+            </Button>
+            <Button
+              variant="success"
+              size="sm"
+              disabled={isBusy}
+              on:click={() => applyPendingChange(true, false)}
+            >
+              <Download size={14} /> Conservar BD del destino ({targetDbCount} emotes)
+            </Button>
+            <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
+              Cancelar
+            </Button>
+          </svelte:fragment>
+        </Alert>
+      {:else}
+        <Alert
+          variant="info"
+          title="📦 ¿Deseas migrar tus emotes y base de datos a la nueva carpeta?"
+        >
+          <div class="prompt-dest" title={pendingTargetPath}>
+            Destino: <code>{pendingTargetPath}</code>
+          </div>
+          <p class="prompt-desc">
+            <strong>Migrar todo</strong> moverá todas las imágenes actuales, actualizará sus rutas y
+            trasladará <code>.store.db</code> junto con tus tags y estadísticas a la nueva carpeta.
+          </p>
+          <svelte:fragment slot="actions">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={isBusy}
+              on:click={() => applyPendingChange(true)}
+            >
+              <PackageCheck size={14} /> Migrar todo (Imágenes + BD)
+            </Button>
+            <Button
+              variant="success"
+              size="sm"
+              disabled={isBusy}
+              on:click={() => applyPendingChange(false)}
+            >
+              <Folder size={14} /> Solo cambiar ruta
+            </Button>
+            <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
+              Cancelar
+            </Button>
+          </svelte:fragment>
+        </Alert>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Mensajes de estado -->
+  {#if isBusy}
+    <div class="status-row">
+      <Alert variant="info">⏳ Procesando solicitud...</Alert>
+    </div>
+  {:else if message}
+    <div class="status-row">
+      <Alert variant={isError ? 'error' : 'success'}>{message}</Alert>
+    </div>
+  {/if}
+
+  <!-- Sección Expandida de Copias de Seguridad Hechas -->
+  <div class="backups-panel">
+    <div class="backups-toolbar">
+      <div class="backups-summary">
+        <div class="backups-title-row">
+          <Database size={15} class="backups-icon" />
+          <span class="backups-title">Copias de seguridad locales</span>
+          <Badge variant="gray" shape="pill">{localBackups.length} / {MAX_BACKUPS}</Badge>
+        </div>
+        <span class="backups-hint">
+          Rotación automática activa (máx. {MAX_BACKUPS} copias almacenadas)
+        </span>
+      </div>
+
+      <div class="backups-actions">
         <Button variant="secondary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
           <Save size={14} /> Copia rápida
         </Button>
@@ -301,96 +420,80 @@
         <Button variant="outline" size="sm" disabled={isBusy} on:click={handleSelectBackupToRestore}>
           <Download size={14} /> Restaurar...
         </Button>
-        <Button variant="ghost" size="sm" disabled={isBusy} on:click={handleOpenHistory}>
-          <History size={14} /> Historial
-        </Button>
       </div>
     </div>
 
-    {#if pendingTargetPath}
-      <div class="prompt-container">
-        {#if askDbConflict}
-          <Alert
-            variant="info"
-            title="⚠️ Ya existe una base de datos (.store.db) en el destino. ¿Cuál deseas conservar?"
-          >
-            <div class="prompt-dest" title={pendingTargetPath}>
-              Destino: <code>{pendingTargetPath}</code>
-            </div>
-            <p class="prompt-desc">
-              Se moverán todas tus imágenes a la nueva carpeta. Elige qué archivo
-              <code>.store.db</code> tendrá prioridad para tus tags, nombres y estadísticas:
-            </p>
-            <svelte:fragment slot="actions">
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={isBusy}
-                on:click={() => applyPendingChange(true, true)}
-              >
-                <Database size={14} /> Conservar BD actual ({currentDbCount} emotes)
-              </Button>
-              <Button
-                variant="success"
-                size="sm"
-                disabled={isBusy}
-                on:click={() => applyPendingChange(true, false)}
-              >
-                <Download size={14} /> Conservar BD del destino ({targetDbCount} emotes)
-              </Button>
-              <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
-                Cancelar
-              </Button>
-            </svelte:fragment>
-          </Alert>
-        {:else}
-          <Alert
-            variant="info"
-            title="📦 ¿Deseas migrar tus emotes y base de datos a la nueva carpeta?"
-          >
-            <div class="prompt-dest" title={pendingTargetPath}>
-              Destino: <code>{pendingTargetPath}</code>
-            </div>
-            <p class="prompt-desc">
-              <strong>Migrar todo</strong> moverá todas las imágenes actuales, actualizará sus rutas y
-              trasladará <code>.store.db</code> junto con tus tags y estadísticas a la nueva carpeta.
-            </p>
-            <svelte:fragment slot="actions">
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={isBusy}
-                on:click={() => applyPendingChange(true)}
-              >
-                <PackageCheck size={14} /> Migrar todo (Imágenes + BD)
-              </Button>
-              <Button
-                variant="success"
-                size="sm"
-                disabled={isBusy}
-                on:click={() => applyPendingChange(false)}
-              >
-                <Folder size={14} /> Solo cambiar ruta
-              </Button>
-              <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
-                Cancelar
-              </Button>
-            </svelte:fragment>
-          </Alert>
-        {/if}
-      </div>
-    {/if}
+    <!-- Lista visible de copias de seguridad hechas -->
+    <div class="backups-list-box">
+      {#if loadingBackups}
+        <div class="empty-state">
+          <span>⏳ Cargando historial de copias...</span>
+        </div>
+      {:else if localBackups.length === 0}
+        <div class="empty-state">
+          <Database size={22} class="empty-icon" />
+          <p class="empty-title">No hay copias de seguridad locales registradas aún</p>
+          <p class="empty-desc">
+            Crea una copia rápida para respaldar la base de datos de tus emotes y etiquetas.
+          </p>
+          <Button variant="secondary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
+            <Save size={14} /> Crear primera copia
+          </Button>
+        </div>
+      {:else}
+        <div class="backups-table">
+          <div class="table-header">
+            <span class="th col-file">Archivo de copia</span>
+            <span class="th col-date">Fecha</span>
+            <span class="th col-emotes">Emotes</span>
+            <span class="th col-size">Tamaño</span>
+            <span class="th col-actions">Acciones</span>
+          </div>
 
-    {#if isBusy}
-      <div class="status-row">
-        <Alert variant="info">⏳ Procesando solicitud...</Alert>
-      </div>
-    {:else if message}
-      <div class="status-row">
-        <Alert variant={isError ? 'error' : 'success'}>{message}</Alert>
-      </div>
-    {/if}
-  </Card>
+          <div class="table-rows">
+            {#each localBackups as item (item.path)}
+              <div class="table-row">
+                <div class="td col-file" title={item.path}>
+                  <Database size={14} class="file-icon" />
+                  <span class="file-name">{item.file_name}</span>
+                </div>
+                <div class="td col-date">
+                  <span class="date-val">{item.created_at}</span>
+                </div>
+                <div class="td col-emotes">
+                  <Badge variant="blue" shape="pill">{item.emote_count} emotes</Badge>
+                </div>
+                <div class="td col-size">
+                  <span class="size-val">{formatFileSize(item.size_bytes)}</span>
+                </div>
+                <div class="td col-actions">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isBusy}
+                    title="Restaurar base de datos a este punto"
+                    on:click={() => handleChooseHistoryItem(item)}
+                  >
+                    <RotateCcw size={13} /> Restaurar
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={isBusy}
+                    title="Eliminar esta copia de seguridad"
+                    ariaLabel="Eliminar copia de seguridad"
+                    on:click={() => requestDeleteBackup(item)}
+                  >
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  </div>
 
   <!-- Modal de confirmación de restauración -->
   <Modal
@@ -434,82 +537,6 @@
       </Button>
       <Button variant="primary" size="sm" disabled={isBusy} on:click={confirmRestore}>
         <RotateCcw size={14} /> Confirmar y Restaurar
-      </Button>
-    </svelte:fragment>
-  </Modal>
-
-  <!-- Modal de Historial de Copias Locales -->
-  <Modal
-    open={showHistoryModal}
-    title={`Historial de copias de seguridad locales (${localBackups.length}/${MAX_BACKUPS})`}
-    maxWidth="580px"
-    busy={isBusy}
-    onClose={() => (showHistoryModal = false)}
-  >
-    <div class="history-content">
-      <div class="history-header">
-        <span class="history-quota">
-          Capacidad: <strong>{localBackups.length} de {MAX_BACKUPS}</strong> copias guardadas
-        </span>
-        <span class="history-hint">Rotación automática activa (máx. 15)</span>
-      </div>
-
-      {#if loadingBackups}
-        <div class="empty-backups">⏳ Cargando copias disponibles...</div>
-      {:else if localBackups.length === 0}
-        <div class="empty-backups">
-          <p>No se encontraron copias de seguridad en la carpeta local (<code>backups/</code>).</p>
-          <Button variant="primary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
-            <Save size={14} /> Crear copia ahora
-          </Button>
-        </div>
-      {:else}
-        <div class="backups-list">
-          {#each localBackups as item (item.path)}
-            <div class="backup-item">
-              <div class="backup-item-info">
-                <div class="backup-item-name" title={item.path}>
-                  📁 {item.file_name}
-                </div>
-                <div class="backup-item-meta">
-                  <span>📅 {item.created_at}</span>
-                  <span>•</span>
-                  <span>📦 {formatFileSize(item.size_bytes)}</span>
-                  <span>•</span>
-                  <Badge variant="blue">{item.emote_count} emotes</Badge>
-                </div>
-              </div>
-              <div class="backup-item-actions">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isBusy}
-                  on:click={() => handleChooseHistoryItem(item)}
-                >
-                  <RotateCcw size={14} /> Restaurar
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={isBusy}
-                  title="Eliminar copia de seguridad"
-                  on:click={() => requestDeleteBackup(item)}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <svelte:fragment slot="footer">
-      <Button variant="ghost" size="sm" on:click={() => (showHistoryModal = false)}>
-        Cerrar
-      </Button>
-      <Button variant="secondary" size="sm" disabled={isBusy} on:click={handleQuickBackup}>
-        <Plus size={14} /> Nueva copia rápida
       </Button>
     </svelte:fragment>
   </Modal>
@@ -561,123 +588,346 @@
 </div>
 
 <style>
-  .storage-wrapper {
-    max-width: 650px;
+  .storage-container {
     width: 100%;
-    margin: 0 auto 20px auto;
-    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-sizing: border-box;
   }
-  .info-row {
+
+  /* Panel de Directorio - Sin background de tarjeta */
+  .storage-panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    box-sizing: border-box;
+  }
+
+  .panel-main-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: 100%;
-    gap: 12px;
-  }
-  .backup-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    gap: 12px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    gap: 16px;
     flex-wrap: wrap;
+    width: 100%;
   }
-  @media (prefers-color-scheme: dark) {
-    .backup-row {
-      border-top-color: rgba(255, 255, 255, 0.08);
-    }
+
+  .path-details {
+    flex: 1;
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-  .backup-label {
-    font-weight: 600;
-    color: #4b5563;
+
+  .path-title-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #a1a1aa;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .path-title-line :global(.path-icon) {
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .path-title {
+    font-size: 12.5px;
+  }
+
+  .path-display-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 6px 12px;
+    overflow: hidden;
+  }
+
+  .path-text {
+    flex: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: #f4f4f5;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-    text-align: left;
   }
-  .backup-actions {
+
+  .path-action {
+    flex-shrink: 0;
+  }
+
+  .storage-stats-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #a1a1aa;
+    flex-wrap: wrap;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  }
+
+  .stat-val {
+    font-weight: 600;
+    color: #f4f4f5;
+  }
+
+  .stat-sep {
+    color: #52525b;
+  }
+
+  /* Panel de Copias de Seguridad - Sin background de tarjeta */
+  .backups-panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    box-sizing: border-box;
+  }
+
+  .backups-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .backups-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .backups-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .backups-title-row :global(.backups-icon) {
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .backups-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #f4f4f5;
+  }
+
+  .backups-hint {
+    font-size: 11.5px;
+    color: #71717a;
+  }
+
+  .backups-actions {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
   }
-  .path-label {
-    font-weight: 600;
-    color: #4b5563;
-    white-space: nowrap;
-    text-align: left;
+
+  /* Tabla y Lista de Backups */
+  .backups-list-box {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
   }
-  .path-val {
-    font-family: monospace;
-    font-size: 12px;
-    color: #1f2937;
-    background: rgba(0, 0, 0, 0.05);
-    padding: 3px 8px;
-    border-radius: 4px;
+
+  .backups-table {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .table-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .table-rows {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .table-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: background 0.15s ease;
+  }
+
+  .table-row:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .table-row:last-child {
+    border-bottom: none;
+  }
+
+  .col-file {
+    flex: 2;
+    min-width: 180px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .col-file :global(.file-icon) {
+    color: #a1a1aa;
+    flex-shrink: 0;
+  }
+
+  .file-name {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #f4f4f5;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .col-date {
+    flex: 1.4;
+    min-width: 130px;
+    font-size: 12px;
+    color: #a1a1aa;
+  }
+
+  .col-emotes {
     flex: 1;
-    text-align: left;
+    min-width: 90px;
   }
-  @media (prefers-color-scheme: dark) {
-    .path-label,
-    .backup-label {
-      color: #9ca3af;
-    }
-    .path-val {
-      color: #f3f4f6;
-      background: rgba(255, 255, 255, 0.08);
-    }
+
+  .col-size {
+    flex: 0.8;
+    min-width: 70px;
+    font-size: 12px;
+    color: #a1a1aa;
   }
+
+  .col-actions {
+    flex: 1.2;
+    min-width: 130px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    text-align: center;
+    color: #71717a;
+    gap: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .empty-state :global(.empty-icon) {
+    color: #52525b;
+    margin-bottom: 2px;
+  }
+
+  .empty-title {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: #e4e4e7;
+  }
+
+  .empty-desc {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    color: #71717a;
+    max-width: 360px;
+  }
+
+  /* Contenedores de alerta y modales */
   .prompt-container,
   .status-row {
     width: 100%;
-    margin-top: 8px;
   }
+
   .prompt-dest {
     font-size: 12px;
-    color: #6b7280;
+    color: #d1d5db;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    margin-bottom: 4px;
   }
+
   .prompt-dest code {
-    font-family: monospace;
-    background: rgba(0, 0, 0, 0.1);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: rgba(255, 255, 255, 0.1);
     padding: 2px 6px;
     border-radius: 4px;
-    color: inherit;
   }
-  @media (prefers-color-scheme: dark) {
-    .prompt-dest {
-      color: #d1d5db;
-    }
-    .prompt-dest code {
-      background: rgba(255, 255, 255, 0.1);
-    }
-  }
+
   .prompt-desc {
     margin: 0;
     font-size: 12px;
     line-height: 1.45;
-    color: #4b5563;
+    color: #9ca3af;
   }
-  @media (prefers-color-scheme: dark) {
-    .prompt-desc {
-      color: #9ca3af;
-    }
-  }
+
   .restore-details {
     display: flex;
     flex-direction: column;
     gap: 12px;
     text-align: left;
   }
+
   .detail-box {
-    background: rgba(0, 0, 0, 0.03);
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
     padding: 10px 14px;
     display: flex;
@@ -685,135 +935,26 @@
     gap: 8px;
     font-size: 13px;
   }
-  @media (prefers-color-scheme: dark) {
-    .detail-box {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(255, 255, 255, 0.08);
-    }
-  }
+
   .detail-line {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
   }
+
   .detail-label {
     font-weight: 600;
-    color: #6b7280;
+    color: #9ca3af;
   }
+
   .detail-val {
-    font-family: monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
+    color: #f4f4f5;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 280px;
-  }
-  .history-content {
-    max-height: 380px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    text-align: left;
-  }
-  .empty-backups {
-    text-align: center;
-    padding: 24px 16px;
-    color: #6b7280;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-  .backups-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .backup-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    background: rgba(0, 0, 0, 0.02);
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 6px;
-    transition: background 0.15s ease;
-  }
-  .backup-item:hover {
-    background: rgba(0, 0, 0, 0.04);
-  }
-  @media (prefers-color-scheme: dark) {
-    .backup-item {
-      background: rgba(255, 255, 255, 0.03);
-      border-color: rgba(255, 255, 255, 0.06);
-    }
-    .backup-item:hover {
-      background: rgba(255, 255, 255, 0.06);
-    }
-  }
-  .backup-item-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    overflow: hidden;
-  }
-  .backup-item-name {
-    font-weight: 600;
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .backup-item-meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    color: #6b7280;
-    flex-wrap: wrap;
-  }
-  @media (prefers-color-scheme: dark) {
-    .backup-item-meta {
-      color: #9ca3af;
-    }
-  }
-  .backup-item-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.03);
-    border-radius: 6px;
-    font-size: 12px;
-    color: #4b5563;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .history-quota strong {
-    color: #1f2937;
-  }
-  .history-hint {
-    font-size: 11px;
-    color: #6b7280;
-  }
-  @media (prefers-color-scheme: dark) {
-    .history-header {
-      background: rgba(255, 255, 255, 0.04);
-      color: #9ca3af;
-    }
-    .history-quota strong {
-      color: #f3f4f6;
-    }
-    .history-hint {
-      color: #9ca3af;
-    }
   }
 </style>

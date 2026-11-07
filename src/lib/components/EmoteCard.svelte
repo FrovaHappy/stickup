@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Emote } from '$lib/types/emote';
-  import { isEmoteNewByDate, topHotRanks } from '$lib/stores/emotes';
-  import { Badge } from '$lib/components/system-ui';
-  import { convertFileSrc } from '@tauri-apps/api/core';
-  import { createEventDispatcher } from 'svelte';
+  import type { Emote } from "$lib/types/emote";
+  import { isEmoteNewByDate, topHotRanks } from "$lib/stores/emotes";
+  import { Badge } from "$lib/components/system-ui";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { createEventDispatcher } from "svelte";
 
   export let e: Emote;
   const dispatch = createEventDispatcher<{
@@ -20,14 +20,14 @@
 
 <div
   class="emote-card-wrapper"
-  on:mouseenter={() => dispatch('hover', e)}
-  on:mouseleave={() => dispatch('unhover', e)}
-  on:focusin={() => dispatch('hover', e)}
-  on:focusout={() => dispatch('unhover', e)}
+  on:mouseenter={() => dispatch("hover", e)}
+  on:mouseleave={() => dispatch("unhover", e)}
+  on:focusin={() => dispatch("hover", e)}
+  on:focusout={() => dispatch("unhover", e)}
   on:contextmenu={(evt) => {
     evt.preventDefault();
     evt.stopPropagation();
-    dispatch('contextmenu', { emote: e, event: evt });
+    dispatch("contextmenu", { emote: e, event: evt });
   }}
   role="presentation"
 >
@@ -37,7 +37,7 @@
     class:is-hot={isHot}
     class:is-new={isNew}
     title={`${e.name} (Ctrl+C para copiar)`}
-    on:click={() => dispatch('select', e)}
+    on:click={() => dispatch("select", e)}
   >
     <div class="badges-container">
       {#if isHot}
@@ -128,9 +128,9 @@
 
   .emote-card:hover,
   .emote-card:focus-visible {
-    border-color: #facc15;
+    border-color: var(--color-orange-primary, #f97316);
     background-color: #2e2e32;
-    box-shadow: 0 0 12px rgba(250, 204, 21, 0.45);
+    box-shadow: 0 0 12px rgba(var(--color-orange-rgb, 249, 115, 22), 0.45);
     transform: scale(1.03);
     outline: none;
     z-index: 5;
