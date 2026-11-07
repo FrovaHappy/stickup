@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../global.css";
   import { page } from "$app/stores";
-  import { House, Settings, Plus } from "@lucide/svelte";
+  import { House, Settings, Plus, ScanSearch } from "@lucide/svelte";
   import { Logo, Toast } from "$lib/components/system-ui";
   import AddEmoteModal from "$lib/components/AddEmoteModal.svelte";
 
@@ -19,6 +19,15 @@
         aria-label="Inicio"
       >
         <House size={22} strokeWidth={2.2} />
+      </a>
+      <a
+        href="/scanner"
+        class="nav-btn"
+        class:active={$page.url.pathname.startsWith("/scanner")}
+        title="Escáner de Imágenes"
+        aria-label="Escáner de Imágenes"
+      >
+        <ScanSearch size={22} strokeWidth={2.2} />
       </a>
     </div>
 

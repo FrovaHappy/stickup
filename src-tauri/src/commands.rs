@@ -163,15 +163,17 @@ fn encode_animated_webp_to_gif_bytes(
 }
 
 fn normalize_download_url(url: &str) -> String {
-    let without_fragment = url.split('#').next().unwrap_or(url).trim();
+    let unescaped = crate::services::scanner::unescape_html_entities(url);
+    let without_fragment = unescaped.split('#').next().unwrap_or(&unescaped).trim();
     let Some((base, query)) = without_fragment.split_once('?') else {
         return without_fragment.to_string();
     };
 
     let kept_params: Vec<&str> = query
         .split('&')
-        .filter(|param| {
-            let key = param.split('=').next().unwrap_or("").trim();
+        .map(|param| param.trim().trim_start_matches("amp;").trim())
+        .filter(|clean_param| {
+            let key = clean_param.split('=').next().unwrap_or("").trim();
             !key.is_empty() && !key.eq_ignore_ascii_case("size")
         })
         .collect();
@@ -1489,6 +1491,145 @@ pub fn set_global_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<St
     Ok(trimmed.to_string())
 }
 
+pub fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    let mut table = [255u8; 256];
+    for (i, &c) in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        .iter()
+        .enumerate()
+    {
+        table[c as usize] = i as u8;
+    }
+    let clean: Vec<u8> = input
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+        .collect();
+    if clean.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::with_capacity((clean.len() * 3) / 4);
+    let mut chunks = clean.chunks_exact(4);
+    for chunk in chunks.by_ref() {
+        let (a, b, c, d) = (
+            table[chunk[0] as usize],
+            table[chunk[1] as usize],
+            table[chunk[2] as usize],
+            table[chunk[3] as usize],
+        );
+        if a == 255 || b == 255 || c == 255 || d == 255 {
+            return None;
+        }
+        out.push((a << 2) | (b >> 4));
+        out.push(((b & 0x0f) << 4) | (c >> 2));
+        out.push(((c & 0x03) << 6) | d);
+    }
+    let rem = chunks.remainder();
+    if rem.len() == 2 {
+        let (a, b) = (table[rem[0] as usize], table[rem[1] as usize]);
+        if a == 255 || b == 255 {
+            return None;
+        }
+        out.push((a << 2) | (b >> 4));
+    } else if rem.len() == 3 {
+        let (a, b, c) = (
+            table[rem[0] as usize],
+            table[rem[1] as usize],
+            table[rem[2] as usize],
+        );
+        if a == 255 || b == 255 || c == 255 {
+            return None;
+        }
+        out.push((a << 2) | (b >> 4));
+        out.push(((b & 0x0f) << 4) | (c >> 2));
+    } else if rem.len() == 1 {
+        return None;
+    }
+    Some(out)
+}
+
+#[tauri::command]
+pub fn scan_url(url: String) -> Result<Vec<crate::models::ScannedImage>, String> {
+    let clean_url = url.trim();
+    if crate::services::scanner::is_direct_image_url(clean_url) {
+        let resolved = if crate::services::scanner::is_discord_cdn_url(clean_url) {
+            crate::services::scanner::normalize_discord_url(clean_url)
+        } else {
+            clean_url.to_string()
+        };
+        let fmt = crate::services::scanner::infer_format(&resolved);
+        let name = crate::services::scanner::suggest_name(&resolved, None);
+        return Ok(vec![crate::models::ScannedImage {
+            url: resolved,
+            alt: None,
+            suggested_name: name,
+            format_hint: fmt,
+        }]);
+    }
+
+    let html = crate::services::scanner::download_html(clean_url)?;
+    Ok(crate::services::scanner::extract_images_from_html(
+        &html,
+        Some(clean_url),
+    ))
+}
+
+#[tauri::command]
+pub fn scan_html(
+    html: String,
+    base_url: Option<String>,
+) -> Result<Vec<crate::models::ScannedImage>, String> {
+    Ok(crate::services::scanner::extract_images_from_html(
+        &html,
+        base_url.as_deref(),
+    ))
+}
+
+#[tauri::command]
+pub fn import_scanned_images(
+    items: Vec<crate::models::ScannedImageImportRequest>,
+) -> Result<crate::models::BatchImportResult, String> {
+    let mut imported = Vec::new();
+    let mut errors = Vec::new();
+
+    for item in items {
+        let clean_url = item.url.trim();
+        let name_opt = item
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+
+        if clean_url.starts_with("data:image/") {
+            if let Some(comma_idx) = clean_url.find(',') {
+                let base64_str = &clean_url[comma_idx + 1..];
+                if let Some(bytes) = decode_base64(base64_str) {
+                    let target_name = name_opt.unwrap_or_else(|| "ScannedDataImage".to_string());
+                    match save_raw_bytes_as_emote(&bytes, &target_name) {
+                        Ok(emote) => imported.push(emote),
+                        Err(e) => errors.push(format!("{}: {}", target_name, e)),
+                    }
+                } else {
+                    errors.push("Base64 inválido para imagen de datos".to_string());
+                }
+            } else {
+                errors.push("Formato de URI de datos incompleto".to_string());
+            }
+        } else {
+            match import_from_url(clean_url.to_string(), name_opt) {
+                Ok(emote) => imported.push(emote),
+                Err(e) => errors.push(format!("{}: {}", clean_url, e)),
+            }
+        }
+    }
+
+    let failed_count = errors.len();
+    Ok(crate::models::BatchImportResult {
+        imported,
+        failed_count,
+        errors,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1564,6 +1705,18 @@ mod tests {
         assert_eq!(
             normalize_download_url("https://example.com/emote.webp?v=1"),
             "https://example.com/emote.webp?v=1"
+        );
+        assert_eq!(
+            normalize_download_url(
+                "https://cdn.discordapp.com/emojis/808565687815372840.webp?amp;animated=true"
+            ),
+            "https://cdn.discordapp.com/emojis/808565687815372840.webp?animated=true"
+        );
+        assert_eq!(
+            normalize_download_url(
+                "https://cdn.discordapp.com/emojis/808565687815372840.webp?size=96&amp;animated=true"
+            ),
+            "https://cdn.discordapp.com/emojis/808565687815372840.webp?animated=true"
         );
     }
 
@@ -1760,5 +1913,15 @@ mod tests {
         assert!(err2.contains("ya está ocupado"));
 
         let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_decode_base64() {
+        assert_eq!(decode_base64(""), Some(vec![]));
+        assert_eq!(decode_base64("YQ=="), Some(b"a".to_vec()));
+        assert_eq!(decode_base64("YWI="), Some(b"ab".to_vec()));
+        assert_eq!(decode_base64("YWJj"), Some(b"abc".to_vec()));
+        assert_eq!(decode_base64("SGVsbG8gV29ybGQh"), Some(b"Hello World!".to_vec()));
+        assert!(decode_base64("invalid!chars").is_none());
     }
 }

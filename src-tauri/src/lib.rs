@@ -1,7 +1,8 @@
 mod clipboard;
-mod commands;
-mod db;
-mod models;
+pub mod commands;
+pub mod db;
+pub mod models;
+pub mod services;
 
 use std::sync::atomic::AtomicBool;
 #[cfg(not(test))]
@@ -179,7 +180,10 @@ pub fn run() {
             commands::get_minimize_to_tray,
             commands::set_minimize_to_tray,
             commands::get_global_shortcut,
-            commands::set_global_shortcut
+            commands::set_global_shortcut,
+            commands::scan_url,
+            commands::scan_html,
+            commands::import_scanned_images
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Emote, ResyncStats } from '$lib/types/emote';
 import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
+import type { ScannedImage, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
 
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
@@ -41,5 +42,10 @@ export const api = {
     invoke<void>('set_minimize_to_tray', { enabled }),
   getGlobalShortcut: () => invoke<string>('get_global_shortcut'),
   setGlobalShortcut: (shortcut: string) =>
-    invoke<string>('set_global_shortcut', { shortcut })
+    invoke<string>('set_global_shortcut', { shortcut }),
+  scanUrl: (url: string) => invoke<ScannedImage[]>('scan_url', { url }),
+  scanHtml: (html: string, baseUrl?: string) =>
+    invoke<ScannedImage[]>('scan_html', { html, baseUrl: baseUrl?.trim() || null }),
+  importScannedImages: (items: ScannedImageImportRequest[]) =>
+    invoke<BatchImportResult>('import_scanned_images', { items })
 };

@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Emote {
     pub id: i64,
     pub name: String,
@@ -51,4 +51,25 @@ pub struct RestoreResult {
     pub restored_emote_count: usize,
     pub safety_backup_path: Option<String>,
     pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ScannedImage {
+    pub url: String,
+    pub alt: Option<String>,
+    pub suggested_name: String,
+    pub format_hint: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ScannedImageImportRequest {
+    pub url: String,
+    pub name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct BatchImportResult {
+    pub imported: Vec<Emote>,
+    pub failed_count: usize,
+    pub errors: Vec<String>,
 }
