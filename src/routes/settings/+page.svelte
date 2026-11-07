@@ -1,13 +1,26 @@
 <script lang="ts">
-  import { ArrowLeft, Database, Sliders, Info, ShieldCheck } from '@lucide/svelte';
+  import { onMount } from 'svelte';
+  import { ArrowLeft, Database, Sliders, Info, ShieldCheck, Monitor } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
   import { Button, Card, Badge, Logo } from '$lib/components/system-ui';
   import { customSizes, addCustomSize, removeCustomSize, DEFAULT_SIZE_PRESETS } from '$lib/stores/sizes';
   import { toast } from '$lib/stores/toast';
+  import {
+    autostartEnabled,
+    minimizeToTrayEnabled,
+    systemSettingsLoading,
+    loadSystemSettings,
+    setAutostartSetting,
+    setMinimizeToTraySetting
+  } from '$lib/stores/systemSettings';
 
   let newSizeWidth: number | null = null;
   let newSizeHeight: number | null = null;
+
+  onMount(() => {
+    loadSystemSettings();
+  });
 
   function handleAddSize() {
     if (!newSizeWidth || !newSizeHeight) {
@@ -50,6 +63,61 @@
         <h2>Almacenamiento y Respaldos</h2>
       </div>
       <StorageSettings />
+    </section>
+
+    <!-- Sección de Comportamiento del Sistema -->
+    <section class="settings-section">
+      <div class="section-title-row">
+        <Monitor size={18} class="section-icon" />
+        <h2>Comportamiento del Sistema</h2>
+      </div>
+      <Card padding="md">
+        <div class="system-toggles-card">
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Iniciar al arrancar el sistema</span>
+              <p class="toggle-desc">
+                Inicia StickUp automáticamente al encender tu equipo o iniciar sesión.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={$autostartEnabled}
+              class="toggle-switch"
+              class:active={$autostartEnabled}
+              disabled={$systemSettingsLoading}
+              title={$autostartEnabled ? 'Desactivar inicio con el sistema' : 'Activar inicio con el sistema'}
+              on:click={() => setAutostartSetting(!$autostartEnabled)}
+            >
+              <span class="toggle-thumb"></span>
+            </button>
+          </div>
+
+          <div class="toggle-separator"></div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Minimizar a la bandeja del sistema</span>
+              <p class="toggle-desc">
+                Al hacer clic en cerrar (×), mantiene StickUp ejecutándose en segundo plano en la bandeja del sistema.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={$minimizeToTrayEnabled}
+              class="toggle-switch"
+              class:active={$minimizeToTrayEnabled}
+              disabled={$systemSettingsLoading}
+              title={$minimizeToTrayEnabled ? 'Desactivar minimizar en la bandeja' : 'Activar minimizar en la bandeja'}
+              on:click={() => setMinimizeToTraySetting(!$minimizeToTrayEnabled)}
+            >
+              <span class="toggle-thumb"></span>
+            </button>
+          </div>
+        </div>
+      </Card>
     </section>
 
     <!-- Sección de Mantenimiento y Sincronización -->
@@ -393,6 +461,88 @@
     font-size: 13px;
     color: #a1a1aa;
     line-height: 1.5;
+  }
+
+  .system-toggles-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .toggle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .toggle-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f4f4f5;
+  }
+
+  .toggle-desc {
+    margin: 0;
+    font-size: 13px;
+    color: #a1a1aa;
+    line-height: 1.4;
+  }
+
+  .toggle-separator {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 9999px;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    transition: background-color 0.2s ease;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .toggle-switch:focus-visible {
+    outline: 2px solid #facc15;
+    outline-offset: 2px;
+  }
+
+  .toggle-switch.active {
+    background: #facc15;
+  }
+
+  .toggle-thumb {
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    border-radius: 9999px;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    display: block;
+  }
+
+  .toggle-switch.active .toggle-thumb {
+    transform: translateX(20px);
+    background: #18181b;
+  }
+
+  .toggle-switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>
 

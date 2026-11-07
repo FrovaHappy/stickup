@@ -82,10 +82,6 @@ src/
 
 ## 4. Checklist de Verificación (Fase `Verify` de ODD)
 
-1. Verificar compilación de Rust:
-   `cargo check --manifest-path src-tauri/Cargo.toml`
-2. Verificar tipos de Svelte/TypeScript:
-   `pnpm run check`
-3. Ejecutar tests unitarios cuando aplique:
-   `pnpm test` / `cargo test --manifest-path src-tauri/Cargo.toml`
-4. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `odd/tasks/{feature-slug}.md` si la tarea fue sustancial.
+1. Verificar que compile sin error la aplicacion:
+   `pnpm run prebuild`
+2. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `odd/tasks/{feature-slug}.md` si la tarea fue sustancial.

@@ -35,5 +35,8 @@ export const api = {
   listBackups: () => invoke<BackupInfo[]>('list_backups'),
   inspectBackup: (backupPath: string) =>
     invoke<BackupInfo>('inspect_backup', { backupPath }),
-  getAppVersion: () => invoke<string>('get_app_version')
+  getAppVersion: () => invoke<string>('get_app_version'),
+  getMinimizeToTray: () => invoke<boolean>('get_minimize_to_tray'),
+  setMinimizeToTray: (enabled: boolean) =>
+    invoke<void>('set_minimize_to_tray', { enabled })
 };

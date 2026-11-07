@@ -1290,6 +1290,23 @@ pub fn get_app_version() -> Result<String, String> {
     Ok(db::CURRENT_APP_VERSION.to_string())
 }
 
+#[tauri::command]
+pub fn get_minimize_to_tray(state: tauri::State<'_, crate::TrayState>) -> bool {
+    state.minimize_to_tray.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn set_minimize_to_tray(
+    state: tauri::State<'_, crate::TrayState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state
+        .minimize_to_tray
+        .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    let conn = db::ensure_db()?;
+    db::set_minimize_to_tray(&conn, enabled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

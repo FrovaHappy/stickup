@@ -260,6 +260,26 @@ pub fn record_app_version(conn: &Connection, version: &str) -> Result<(), String
     Ok(())
 }
 
+pub fn get_minimize_to_tray(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'minimize_to_tray'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .map(|v| v == "true" || v == "1")
+    .unwrap_or(false)
+}
+
+pub fn set_minimize_to_tray(conn: &Connection, enabled: bool) -> Result<(), String> {
+    let val = if enabled { "true" } else { "false" };
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('minimize_to_tray', ?1)",
+        params![val],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn check_and_backup_version_in_dir(
     conn: &Connection,
     current_version: &str,
@@ -659,6 +679,27 @@ mod tests {
 
         record_app_version(&conn, "0.1.1").unwrap();
         assert_eq!(get_recorded_app_version(&conn), Some("0.1.1".to_string()));
+    }
+
+    #[test]
+    fn test_get_and_set_minimize_to_tray() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+            [],
+        )
+        .unwrap();
+
+        // Por defecto es false
+        assert!(!get_minimize_to_tray(&conn));
+
+        // Establecer en true
+        set_minimize_to_tray(&conn, true).unwrap();
+        assert!(get_minimize_to_tray(&conn));
+
+        // Establecer en false
+        set_minimize_to_tray(&conn, false).unwrap();
+        assert!(!get_minimize_to_tray(&conn));
     }
 
     #[test]
