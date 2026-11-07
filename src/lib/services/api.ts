@@ -38,5 +38,8 @@ export const api = {
   getAppVersion: () => invoke<string>('get_app_version'),
   getMinimizeToTray: () => invoke<boolean>('get_minimize_to_tray'),
   setMinimizeToTray: (enabled: boolean) =>
-    invoke<void>('set_minimize_to_tray', { enabled })
+    invoke<void>('set_minimize_to_tray', { enabled }),
+  getGlobalShortcut: () => invoke<string>('get_global_shortcut'),
+  setGlobalShortcut: (shortcut: string) =>
+    invoke<string>('set_global_shortcut', { shortcut })
 };

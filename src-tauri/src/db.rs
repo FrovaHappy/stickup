@@ -280,6 +280,27 @@ pub fn set_minimize_to_tray(conn: &Connection, enabled: bool) -> Result<(), Stri
     Ok(())
 }
 
+pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Super+Control+Period";
+
+pub fn get_global_shortcut(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'global_shortcut'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap_or_else(|_| DEFAULT_GLOBAL_SHORTCUT.to_string())
+}
+
+pub fn set_global_shortcut(conn: &Connection, shortcut: &str) -> Result<(), String> {
+    let val = shortcut.trim();
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('global_shortcut', ?1)",
+        params![val],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn check_and_backup_version_in_dir(
     conn: &Connection,
     current_version: &str,
@@ -700,6 +721,34 @@ mod tests {
         // Establecer en false
         set_minimize_to_tray(&conn, false).unwrap();
         assert!(!get_minimize_to_tray(&conn));
+    }
+
+    #[test]
+    fn test_get_and_set_global_shortcut() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+            [],
+        )
+        .unwrap();
+
+        // Por defecto es DEFAULT_GLOBAL_SHORTCUT
+        assert_eq!(get_global_shortcut(&conn), DEFAULT_GLOBAL_SHORTCUT);
+
+        // Modificar a un atajo personalizado
+        set_global_shortcut(&conn, "Alt+Shift+Period").unwrap();
+        assert_eq!(get_global_shortcut(&conn), "Alt+Shift+Period");
+
+        // Espacios en blanco alrededor se limpian
+        set_global_shortcut(&conn, "  Control+KeyK  ").unwrap();
+        assert_eq!(get_global_shortcut(&conn), "Control+KeyK");
+    }
+
+    #[test]
+    fn test_default_global_shortcut_parses() {
+        use tauri_plugin_global_shortcut::Shortcut;
+        let parsed: Result<Shortcut, _> = DEFAULT_GLOBAL_SHORTCUT.parse();
+        assert!(parsed.is_ok(), "DEFAULT_GLOBAL_SHORTCUT should parse: {:?}", parsed.err());
     }
 
     #[test]

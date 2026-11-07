@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { ArrowLeft, Database, Sliders, Info, ShieldCheck, Monitor } from '@lucide/svelte';
+  import { ArrowLeft, Database, Sliders, Info, ShieldCheck, Monitor, Keyboard, RotateCcw } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
   import { Button, Badge, Logo } from '$lib/components/system-ui';
@@ -9,18 +9,109 @@
   import {
     autostartEnabled,
     minimizeToTrayEnabled,
+    globalShortcut,
+    DEFAULT_GLOBAL_SHORTCUT,
     systemSettingsLoading,
     loadSystemSettings,
     setAutostartSetting,
-    setMinimizeToTraySetting
+    setMinimizeToTraySetting,
+    setGlobalShortcutSetting,
+    formatShortcutKeys
   } from '$lib/stores/systemSettings';
 
   let newSizeWidth: number | null = null;
   let newSizeHeight: number | null = null;
+  let isRecordingShortcut = false;
 
   onMount(() => {
     loadSystemSettings();
+    window.addEventListener('keydown', handleKeydown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeydown, true);
+    };
   });
+
+  function startRecordingShortcut() {
+    isRecordingShortcut = true;
+  }
+
+  function stopRecordingShortcut() {
+    isRecordingShortcut = false;
+  }
+
+  async function resetDefaultShortcut() {
+    await setGlobalShortcutSetting(DEFAULT_GLOBAL_SHORTCUT);
+  }
+
+  async function handleKeydown(e: KeyboardEvent) {
+    if (!isRecordingShortcut) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.key === 'Escape') {
+      stopRecordingShortcut();
+      return;
+    }
+
+    // Tecla modificadora sola
+    if (['Control', 'Shift', 'Alt', 'Meta', 'OS'].includes(e.key)) {
+      return;
+    }
+
+    const parts: string[] = [];
+    if (e.metaKey) parts.push('Super');
+    if (e.ctrlKey) parts.push('Control');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+
+    if (parts.length === 0) {
+      toast.error('El atajo debe incluir al menos una tecla modificadora (Win, Ctrl, Alt o Shift)');
+      return;
+    }
+
+    let codeName = '';
+    if (e.code === 'Period' || e.key === '.') {
+      codeName = 'Period';
+    } else if (e.code === 'Comma' || e.key === ',') {
+      codeName = 'Comma';
+    } else if (e.code === 'Space' || e.key === ' ') {
+      codeName = 'Space';
+    } else if (/^Key[A-Z]$/.test(e.code)) {
+      codeName = e.code;
+    } else if (/^Digit[0-9]$/.test(e.code)) {
+      codeName = e.code;
+    } else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(e.code)) {
+      codeName = e.code;
+    } else if (
+      [
+        'ArrowUp',
+        'ArrowDown',
+        'ArrowLeft',
+        'ArrowRight',
+        'Enter',
+        'Tab',
+        'Backspace',
+        'Delete',
+        'Home',
+        'End',
+        'PageUp',
+        'PageDown'
+      ].includes(e.code)
+    ) {
+      codeName = e.code;
+    } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
+      codeName = `Key${e.key.toUpperCase()}`;
+    } else {
+      toast.error(`Tecla no admitida (${e.key || e.code})`);
+      return;
+    }
+
+    parts.push(codeName);
+    const candidate = parts.join('+');
+    stopRecordingShortcut();
+    await setGlobalShortcutSetting(candidate);
+  }
 
   function handleAddSize() {
     if (!newSizeWidth || !newSizeHeight) {
@@ -121,6 +212,63 @@
             >
               <span class="toggle-thumb"></span>
             </button>
+          </div>
+
+          <div class="toggle-separator"></div>
+
+          <div class="shortcut-setting-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Acceso rápido global</span>
+              <p class="toggle-desc">
+                Atajo de teclado global para abrir o alternar la ventana de StickUp desde cualquier aplicación.
+              </p>
+            </div>
+            <div class="shortcut-action-area">
+              {#if isRecordingShortcut}
+                <div class="recording-badge" role="status" aria-live="polite">
+                  <span class="recording-dot"></span>
+                  <span>Presiona la combinación de teclas...</span>
+                  <button
+                    type="button"
+                    class="cancel-recording-btn"
+                    on:click={stopRecordingShortcut}
+                    title="Cancelar grabación"
+                  >
+                    Cancelar (Esc)
+                  </button>
+                </div>
+              {:else}
+                <div class="shortcut-keys-display" title="Atajo actual">
+                  {#each formatShortcutKeys($globalShortcut) as key}
+                    <kbd class="shortcut-key">{key}</kbd>
+                  {/each}
+                </div>
+                <div class="shortcut-buttons">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={$systemSettingsLoading}
+                    on:click={startRecordingShortcut}
+                    title="Configurar una nueva combinación de teclas"
+                  >
+                    <Keyboard size={14} />
+                    <span>Cambiar</span>
+                  </Button>
+                  {#if $globalShortcut !== DEFAULT_GLOBAL_SHORTCUT}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={$systemSettingsLoading}
+                      on:click={resetDefaultShortcut}
+                      title="Restablecer al atajo por defecto (Win + Ctrl + .)"
+                    >
+                      <RotateCcw size={14} />
+                      <span>Por defecto</span>
+                    </Button>
+                  {/if}
+                </div>
+              {/if}
+            </div>
           </div>
         </div>
       </div>
@@ -618,5 +766,99 @@
   .toggle-switch:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .shortcut-setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .shortcut-action-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .shortcut-keys-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .shortcut-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    background: #242427;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.22);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: #f4f4f5;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  }
+
+  .shortcut-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .recording-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: rgba(249, 115, 22, 0.12);
+    border: 1px dashed var(--color-orange-primary, #f97316);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-orange-400, #fb923c);
+  }
+
+  .recording-dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--color-orange-primary, #f97316);
+    border-radius: 50%;
+    animation: pulse-recording 1.2s infinite ease-in-out;
+  }
+
+  .cancel-recording-btn {
+    background: transparent;
+    border: none;
+    color: #a1a1aa;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s ease;
+  }
+
+  .cancel-recording-btn:hover {
+    color: #ffffff;
+    text-decoration: underline;
+  }
+
+  @keyframes pulse-recording {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.3;
+      transform: scale(0.8);
+    }
   }
 </style>

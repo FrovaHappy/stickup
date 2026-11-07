@@ -3,12 +3,17 @@ mod commands;
 mod db;
 mod models;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+#[cfg(not(test))]
+use std::sync::atomic::Ordering;
+#[cfg(not(test))]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+#[cfg(not(test))]
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub struct TrayState {
     pub minimize_to_tray: AtomicBool,
@@ -23,6 +28,25 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
         ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(move |app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let is_visible = window.is_visible().unwrap_or(false);
+                            let is_focused = window.is_focused().unwrap_or(false);
+                            if is_visible && is_focused {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             // Asegura la base de datos y crea la copia automática por actualización antes de iniciar
             let initial_minimize = if let Ok(conn) = db::ensure_db() {
@@ -30,6 +54,29 @@ pub fn run() {
             } else {
                 false
             };
+
+            // Registrar atajo global activo
+            let active_shortcut = if let Ok(conn) = db::ensure_db() {
+                db::get_global_shortcut(&conn)
+            } else {
+                db::DEFAULT_GLOBAL_SHORTCUT.to_string()
+            };
+
+            if !active_shortcut.is_empty() {
+                match active_shortcut.parse::<Shortcut>() {
+                    Ok(parsed) => {
+                        if let Err(e) = app.global_shortcut().register(parsed) {
+                            eprintln!("Error registrando atajo global {}: {}", active_shortcut, e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error al parsear el atajo global: {}", e);
+                        if let Ok(default_parsed) = db::DEFAULT_GLOBAL_SHORTCUT.parse::<Shortcut>() {
+                            let _ = app.global_shortcut().register(default_parsed);
+                        }
+                    }
+                }
+            }
 
             app.manage(TrayState {
                 minimize_to_tray: AtomicBool::new(initial_minimize),
@@ -130,7 +177,9 @@ pub fn run() {
             commands::inspect_backup,
             commands::get_app_version,
             commands::get_minimize_to_tray,
-            commands::set_minimize_to_tray
+            commands::set_minimize_to_tray,
+            commands::get_global_shortcut,
+            commands::set_global_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -10,6 +10,8 @@ export interface SystemService {
   setAutostart(enable: boolean): Promise<boolean>;
   isMinimizeToTray(): Promise<boolean>;
   setMinimizeToTray(enabled: boolean): Promise<boolean>;
+  getGlobalShortcut(): Promise<string>;
+  setGlobalShortcut(shortcut: string): Promise<string>;
 }
 
 export const systemService: SystemService = {
@@ -41,6 +43,18 @@ export const systemService: SystemService = {
   async setMinimizeToTray(enabled: boolean): Promise<boolean> {
     await api.setMinimizeToTray(enabled);
     return true;
+  },
+
+  async getGlobalShortcut(): Promise<string> {
+    try {
+      return await api.getGlobalShortcut();
+    } catch {
+      return 'Super+Control+Period';
+    }
+  },
+
+  async setGlobalShortcut(shortcut: string): Promise<string> {
+    return await api.setGlobalShortcut(shortcut);
   }
 };
 

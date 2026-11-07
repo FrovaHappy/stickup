@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   autostartEnabled,
   minimizeToTrayEnabled,
+  globalShortcut,
+  DEFAULT_GLOBAL_SHORTCUT,
   systemSettingsLoading,
   loadSystemSettings,
   setAutostartSetting,
   setMinimizeToTraySetting,
+  setGlobalShortcutSetting,
+  formatShortcutKeys,
   setSystemServiceForTesting,
   resetSystemService
 } from './systemSettings';
@@ -14,7 +18,8 @@ import type { SystemService } from '$lib/services/system';
 describe('systemSettings store', () => {
   let mockState = {
     autostart: false,
-    minimizeToTray: false
+    minimizeToTray: false,
+    globalShortcut: DEFAULT_GLOBAL_SHORTCUT
   };
 
   const mockService: SystemService = {
@@ -31,37 +36,50 @@ describe('systemSettings store', () => {
     async setMinimizeToTray(enable: boolean) {
       mockState.minimizeToTray = enable;
       return true;
+    },
+    async getGlobalShortcut() {
+      return mockState.globalShortcut;
+    },
+    async setGlobalShortcut(shortcut: string) {
+      mockState.globalShortcut = shortcut;
+      return shortcut;
     }
   };
 
   beforeEach(() => {
     mockState = {
       autostart: false,
-      minimizeToTray: false
+      minimizeToTray: false,
+      globalShortcut: DEFAULT_GLOBAL_SHORTCUT
     };
     setSystemServiceForTesting(mockService);
     autostartEnabled.set(false);
     minimizeToTrayEnabled.set(false);
+    globalShortcut.set(DEFAULT_GLOBAL_SHORTCUT);
     systemSettingsLoading.set(false);
   });
 
   it('loads system settings and updates stores', async () => {
     mockState.autostart = true;
     mockState.minimizeToTray = true;
+    mockState.globalShortcut = 'Alt+Shift+Period';
 
     const res = await loadSystemSettings(mockService);
-    expect(res).toEqual({ autostart: true, minimizeToTray: true });
+    expect(res).toEqual({ autostart: true, minimizeToTray: true, globalShortcut: 'Alt+Shift+Period' });
 
     let autoVal: boolean | undefined;
     let trayVal: boolean | undefined;
+    let shortcutVal: string | undefined;
     let loadingVal: boolean | undefined;
 
     autostartEnabled.subscribe((v) => (autoVal = v))();
     minimizeToTrayEnabled.subscribe((v) => (trayVal = v))();
+    globalShortcut.subscribe((v) => (shortcutVal = v))();
     systemSettingsLoading.subscribe((v) => (loadingVal = v))();
 
     expect(autoVal).toBe(true);
     expect(trayVal).toBe(true);
+    expect(shortcutVal).toBe('Alt+Shift+Period');
     expect(loadingVal).toBe(false);
   });
 
@@ -95,6 +113,29 @@ describe('systemSettings store', () => {
     expect(trayVal).toBe(false);
   });
 
+  it('updates global shortcut setting', async () => {
+    const success = await setGlobalShortcutSetting('Super+Control+Period', mockService);
+    expect(success).toBe(true);
+    expect(mockState.globalShortcut).toBe('Super+Control+Period');
+
+    let shortcutVal: string | undefined;
+    globalShortcut.subscribe((v) => (shortcutVal = v))();
+    expect(shortcutVal).toBe('Super+Control+Period');
+
+    await setGlobalShortcutSetting('Alt+Shift+KeyX', mockService);
+    expect(mockState.globalShortcut).toBe('Alt+Shift+KeyX');
+    globalShortcut.subscribe((v) => (shortcutVal = v))();
+    expect(shortcutVal).toBe('Alt+Shift+KeyX');
+  });
+
+  it('formats accelerator shortcut keys for display', () => {
+    expect(formatShortcutKeys('Super+Control+Period')).toEqual(['Win', 'Ctrl', '.']);
+    expect(formatShortcutKeys('Super+Ctrl+.')).toEqual(['Win', 'Ctrl', '.']);
+    expect(formatShortcutKeys('Alt+Shift+KeyP')).toEqual(['Alt', 'Shift', 'P']);
+    expect(formatShortcutKeys('Control+Space')).toEqual(['Ctrl', 'Espacio']);
+    expect(formatShortcutKeys('')).toEqual([]);
+  });
+
   it('handles service errors gracefully without updating store on failure', async () => {
     const failingService: SystemService = {
       async isAutostart() {
@@ -108,6 +149,12 @@ describe('systemSettings store', () => {
       },
       async setMinimizeToTray() {
         throw new Error('cannot set tray');
+      },
+      async getGlobalShortcut() {
+        throw new Error('fail shortcut');
+      },
+      async setGlobalShortcut() {
+        throw new Error('cannot set shortcut');
       }
     };
 
@@ -118,6 +165,9 @@ describe('systemSettings store', () => {
 
     const traySuccess = await setMinimizeToTraySetting(true, failingService);
     expect(traySuccess).toBe(false);
+
+    const shortcutSuccess = await setGlobalShortcutSetting('Super+Control+Period', failingService);
+    expect(shortcutSuccess).toBe(false);
 
     spyConsole.mockRestore();
     resetSystemService();

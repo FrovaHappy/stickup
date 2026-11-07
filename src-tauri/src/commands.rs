@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::Instant;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 static CLIPBOARD_LOCK: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -1449,6 +1450,43 @@ pub fn set_minimize_to_tray(
         .store(enabled, std::sync::atomic::Ordering::Relaxed);
     let conn = db::ensure_db()?;
     db::set_minimize_to_tray(&conn, enabled)
+}
+
+#[tauri::command]
+pub fn get_global_shortcut() -> Result<String, String> {
+    let conn = db::ensure_db()?;
+    Ok(db::get_global_shortcut(&conn))
+}
+
+#[tauri::command]
+pub fn set_global_shortcut(app: tauri::AppHandle, shortcut: String) -> Result<String, String> {
+    let conn = db::ensure_db()?;
+    let previous = db::get_global_shortcut(&conn);
+    let trimmed = shortcut.trim();
+
+    if trimmed.is_empty() {
+        let _ = app.global_shortcut().unregister_all();
+        db::set_global_shortcut(&conn, "")?;
+        return Ok(String::new());
+    }
+
+    let parsed: Shortcut = trimmed
+        .parse()
+        .map_err(|e| format!("Atajo inválido: {}", e))?;
+
+    let _ = app.global_shortcut().unregister_all();
+
+    if let Err(e) = app.global_shortcut().register(parsed) {
+        if !previous.is_empty() {
+            if let Ok(prev_parsed) = previous.parse::<Shortcut>() {
+                let _ = app.global_shortcut().register(prev_parsed);
+            }
+        }
+        return Err(format!("No se pudo registrar el atajo global: {}", e));
+    }
+
+    db::set_global_shortcut(&conn, trimmed)?;
+    Ok(trimmed.to_string())
 }
 
 #[cfg(test)]

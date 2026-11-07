@@ -8,6 +8,7 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "autostart:default"
+    "autostart:default",
+    "global-shortcut:default"
   ]
 }
