@@ -10,6 +10,7 @@
   import { customSizes } from '$lib/stores/sizes';
   import { toast } from '$lib/stores/toast';
   import { sortOption, sortEmotesList } from '$lib/stores/preferences';
+  import { toPascalCase } from '$lib/utils/format';
 
   let selected: Emote | null = null;
   let searchQuery = '';
@@ -92,16 +93,23 @@
   }
 
   $: filteredAndSortedEmotes = (() => {
-    const q = searchQuery.trim().toLowerCase();
+    const rawQ = searchQuery.trim();
+    const q = rawQ.toLowerCase();
+    const pascalQ = toPascalCase(rawQ).toLowerCase();
     let result = $emotes;
 
     if (q) {
       result = result.filter((e) => {
-        const nameMatch = (e.name ?? '').toLowerCase().includes(q);
+        const name = (e.name ?? '').toLowerCase();
+        const nameMatch = name.includes(q) || (pascalQ ? name.includes(pascalQ) : false);
+
         const tags = (e.tag ?? '')
           .split(',')
           .map((t) => t.trim().toLowerCase());
-        const tagMatch = tags.some((t) => t.includes(q));
+        const tagMatch = tags.some(
+          (t) => t.includes(q) || (pascalQ ? t.includes(pascalQ) : false)
+        );
+
         return nameMatch || tagMatch;
       });
     }

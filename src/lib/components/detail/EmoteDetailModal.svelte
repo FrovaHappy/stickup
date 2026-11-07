@@ -3,7 +3,7 @@
   import { Copy, Check, Download, Trash2 } from '@lucide/svelte';
   import type { Emote } from '$lib/types/emote';
   import { api } from '$lib/services/api';
-  import {
+  import emotes, {
     loadEmotes,
     topHotRanks,
     isEmoteNewByDate
@@ -22,7 +22,8 @@
     getMimeType,
     isAnimatedEmote,
     renderEmoteToCanvas,
-    resolveDimensions
+    resolveDimensions,
+    toPascalCase
   } from '$lib/utils/format';
   import { Alert, Badge, Button, Chip, Input, Modal } from '$lib/components/system-ui';
   import { convertFileSrc } from '@tauri-apps/api/core';
@@ -49,6 +50,7 @@
   let customWidth = 96;
   let customHeight = 96;
   let customSizeError = '';
+  let nameError = '';
 
   function handleAddCustomSize() {
     customSizeError = '';
@@ -79,6 +81,7 @@
   $: if (emote && emote.id !== initializedEmoteId) {
     initializedEmoteId = emote.id;
     emoteName = emote.name ?? '';
+    nameError = '';
     copyCount = emote.copy_count ?? 0;
     interactionCount = emote.interaction_count ?? 0;
     tagList = (emote.tag ?? '')
@@ -123,22 +126,62 @@
     }, 2500);
   }
 
+  function checkNameOccupied(candidate: string): boolean {
+    if (!emote) return false;
+    const clean = toPascalCase(candidate.trim());
+    if (!clean || clean.toLowerCase() === (emote.name ?? '').toLowerCase()) {
+      return false;
+    }
+    return $emotes.some(
+      (e) => e.id !== emote.id && (e.name ?? '').toLowerCase() === clean.toLowerCase()
+    );
+  }
+
+  function handleNameInput() {
+    if (checkNameOccupied(emoteName)) {
+      nameError = 'Este nombre ya está ocupado';
+    } else {
+      nameError = '';
+    }
+  }
+
   async function persistMetadata(newName: string, newTags: string[]) {
     if (!emote) return;
-    tagList = newTags;
-    const joinedTags = newTags.join(', ');
-    emote.name = newName;
-    emote.tag = joinedTags;
+    const cleanName = toPascalCase(newName) || newName;
+    const cleanTags = newTags.map((t) => toPascalCase(t)).filter(Boolean);
+    tagList = cleanTags;
+    const joinedTags = cleanTags.join(', ');
+
     try {
-      await api.updateTag(emote.id, newName, joinedTags);
+      const updatedPath = await api.updateTag(emote.id, cleanName, joinedTags);
+      nameError = '';
+      emote.name = cleanName;
+      emote.tag = joinedTags;
+      if (updatedPath) {
+        emote.path = updatedPath;
+      }
+      await loadEmotes();
     } catch (e: any) {
-      showToast(`Error al guardar: ${e?.message || e}`);
+      const msg = e?.message || String(e);
+      if (msg.toLowerCase().includes('ocupado')) {
+        nameError = 'Este nombre ya está ocupado';
+      } else {
+        showToast(`Error al guardar: ${msg}`);
+      }
     }
   }
 
   function handleNameBlur() {
-    if (emote && emoteName.trim() !== emote.name) {
-      persistMetadata(emoteName.trim() || emote.name, tagList);
+    if (!emote) return;
+    const normalized = toPascalCase(emoteName.trim()) || emote.name;
+    emoteName = normalized;
+    if (checkNameOccupied(normalized)) {
+      nameError = 'Este nombre ya está ocupado';
+      return;
+    }
+    nameError = '';
+    if (normalized !== emote.name) {
+      persistMetadata(normalized, tagList);
     }
   }
 
@@ -276,6 +319,7 @@
           label="Name"
           bind:value={emoteName}
           placeholder="Nombre del emote"
+          on:input={handleNameInput}
           on:blur={handleNameBlur}
         >
           <Button
@@ -288,6 +332,11 @@
             <Copy size={14} />
           </Button>
         </Input>
+        {#if nameError}
+          <div class="name-occupied-legend">
+            <span>⚠️ {nameError}</span>
+          </div>
+        {/if}
 
         <Input
           label="Link"
@@ -651,5 +700,14 @@
   .custom-size-error {
     font-size: 11px;
     color: #f87171;
+  }
+  .name-occupied-legend {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #f87171;
+    margin-top: -6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 </style>

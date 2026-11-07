@@ -25,6 +25,77 @@ fn extract_stem(path: &Path) -> String {
         .to_string()
 }
 
+pub fn to_pascal_case(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let mut words = Vec::new();
+    let mut current_word = String::new();
+    let chars: Vec<char> = trimmed.chars().collect();
+    let len = chars.len();
+
+    for i in 0..len {
+        let c = chars[i];
+        if !c.is_alphanumeric() {
+            if !current_word.is_empty() {
+                words.push(current_word.clone());
+                current_word.clear();
+            }
+            continue;
+        }
+
+        // CamelCase/PascalCase boundary: previous is lower/numeric, current is upper
+        if i > 0 && c.is_uppercase() {
+            let prev = chars[i - 1];
+            if prev.is_lowercase() || prev.is_numeric() {
+                if !current_word.is_empty() {
+                    words.push(current_word.clone());
+                    current_word.clear();
+                }
+            } else if prev.is_uppercase() && i + 1 < len && chars[i + 1].is_lowercase() {
+                // Acronym boundary: e.g. "XMLParser" -> "XML", "Parser"
+                if !current_word.is_empty() {
+                    words.push(current_word.clone());
+                    current_word.clear();
+                }
+            }
+        }
+
+        current_word.push(c);
+    }
+
+    if !current_word.is_empty() {
+        words.push(current_word);
+    }
+
+    let mut result = String::new();
+    for word in words {
+        let mut word_chars = word.chars();
+        if let Some(first) = word_chars.next() {
+            result.extend(first.to_uppercase());
+            for rest in word_chars {
+                result.extend(rest.to_lowercase());
+            }
+        }
+    }
+
+    if result.is_empty() {
+        trimmed.to_string()
+    } else {
+        result
+    }
+}
+
+pub fn normalize_tags_str(tags: &str) -> String {
+    tags.split(',')
+        .map(|t| to_pascal_case(t.trim()))
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<String>>()
+        .join(", ")
+}
+
 fn insert_emote_record(
     conn: &Connection,
     name: &str,
@@ -192,9 +263,9 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
     let now = chrono::Utc::now().to_rfc3339();
     let dest_str = normalize_path(&dest);
     let clean_name = if emote_name.trim().is_empty() {
-        "emote".to_string()
+        "Emote".to_string()
     } else {
-        emote_name.trim().to_string()
+        to_pascal_case(emote_name)
     };
 
     let id = insert_emote_record(&conn, &clean_name, &dest_str, w, h, &format, &now)?;
@@ -710,7 +781,7 @@ fn import_single_file(
 
     let now = chrono::Utc::now().to_rfc3339();
     let dest_str = normalize_path(&dest);
-    let emote_name = extract_stem(src);
+    let emote_name = to_pascal_case(&extract_stem(src));
 
     let id = insert_emote_record(conn, &emote_name, &dest_str, w, h, &format, &now)?;
     let size = fs::metadata(&dest).map(|m| m.len()).ok();
@@ -973,28 +1044,101 @@ pub fn delete_emote(id: i64) -> Result<bool, String> {
     Ok(true)
 }
 
-#[tauri::command]
-pub fn update_tag(id: i64, name: Option<String>, tag: Option<String>) -> Result<bool, String> {
-    let conn = ensure_db()?;
-    match (name, tag) {
-        (Some(n), Some(t)) => {
+pub fn update_emote_metadata_in_conn(
+    conn: &Connection,
+    id: i64,
+    name: Option<String>,
+    tag: Option<String>,
+) -> Result<String, String> {
+    let (current_name, current_path_raw): (String, String) = conn
+        .query_row(
+            "SELECT COALESCE(name, ''), path FROM emotes WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("Emote con id {} no encontrado: {}", id, e))?;
+
+    let clean_path = clean_path_str(&current_path_raw);
+    let current_path = PathBuf::from(&clean_path);
+    let mut final_path_str = clean_path.clone();
+
+    let clean_name = name.map(|n| to_pascal_case(&n)).filter(|s| !s.is_empty());
+
+    if let Some(ref new_name) = clean_name {
+        let is_name_taken: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM emotes WHERE LOWER(name) = LOWER(?1) AND id != ?2)",
+                params![new_name, id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if is_name_taken {
+            return Err(format!("El nombre '{}' ya está ocupado", new_name));
+        }
+
+        let name_changed = new_name != &current_name;
+        if name_changed {
+            let parent_dir = current_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| get_active_emotes_dir(conn));
+
+            let ext = current_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("webp");
+
+            let new_file_name = format!("{}.{}", new_name, ext);
+            let target_path = parent_dir.join(&new_file_name);
+
+            let same_file = clean_path_str(&target_path.to_string_lossy()).to_lowercase()
+                == clean_path_str(&current_path.to_string_lossy()).to_lowercase();
+
+            if target_path.exists() && !same_file {
+                return Err(format!("El nombre '{}' ya está ocupado", new_name));
+            }
+
+            if current_path.exists() {
+                if same_file {
+                    if current_path != target_path {
+                        let temp_file = parent_dir.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+                        fs::rename(&current_path, &temp_file)
+                            .map_err(|e| format!("Error en renombrado temporal: {}", e))?;
+                        fs::rename(&temp_file, &target_path)
+                            .map_err(|e| format!("Error renombrando archivo en disco: {}", e))?;
+                    }
+                } else {
+                    fs::rename(&current_path, &target_path)
+                        .map_err(|e| format!("Error renombrando archivo en disco: {}", e))?;
+                }
+            }
+
+            final_path_str = normalize_path(&target_path);
             conn.execute(
-                "UPDATE emotes SET name = ?1, tag = ?2 WHERE id = ?3",
-                params![n, t, id],
+                "UPDATE emotes SET name = ?1, path = ?2 WHERE id = ?3",
+                params![new_name, final_path_str, id],
             )
             .map_err(|e| e.to_string())?;
         }
-        (Some(n), None) => {
-            conn.execute("UPDATE emotes SET name = ?1 WHERE id = ?2", params![n, id])
-                .map_err(|e| e.to_string())?;
-        }
-        (None, Some(t)) => {
-            conn.execute("UPDATE emotes SET tag = ?1 WHERE id = ?2", params![t, id])
-                .map_err(|e| e.to_string())?;
-        }
-        (None, None) => {}
     }
-    Ok(true)
+
+    let clean_tag = tag.map(|t| normalize_tags_str(&t));
+    if let Some(ref t) = clean_tag {
+        conn.execute(
+            "UPDATE emotes SET tag = ?1 WHERE id = ?2",
+            params![t, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(final_path_str)
+}
+
+#[tauri::command]
+pub fn update_tag(id: i64, name: Option<String>, tag: Option<String>) -> Result<String, String> {
+    let conn = ensure_db()?;
+    update_emote_metadata_in_conn(&conn, id, name, tag)
 }
 
 #[tauri::command]
@@ -1196,7 +1340,7 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
                             let now = chrono::Utc::now().to_rfc3339();
                             let _ = insert_emote_record(
                                 &conn,
-                                &extract_stem(&entry_path),
+                                &to_pascal_case(&extract_stem(&entry_path)),
                                 &new_path_str,
                                 w as i32,
                                 h as i32,
@@ -1215,7 +1359,7 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
                 let now = chrono::Utc::now().to_rfc3339();
                 let _ = insert_emote_record(
                     &conn,
-                    &extract_stem(&entry_path),
+                    &to_pascal_case(&extract_stem(&entry_path)),
                     &orig_path_str,
                     w as i32,
                     h as i32,
@@ -1231,7 +1375,7 @@ pub fn resync_emotes() -> Result<ResyncStats, String> {
             let now = chrono::Utc::now().to_rfc3339();
             let _ = insert_emote_record(
                 &conn,
-                &extract_stem(&entry_path),
+                &to_pascal_case(&extract_stem(&entry_path)),
                 &orig_path_str,
                 w as i32,
                 h as i32,
@@ -1470,5 +1614,113 @@ mod tests {
         let static_res =
             encode_animated_webp_to_gif_bytes(&static_webp.into_inner()).expect("valid static webp");
         assert!(static_res.is_none());
+    }
+
+    #[test]
+    fn test_to_pascal_case() {
+        assert_eq!(to_pascal_case("pepe"), "Pepe");
+        assert_eq!(to_pascal_case("pepe_dance"), "PepeDance");
+        assert_eq!(to_pascal_case("pepe-dance"), "PepeDance");
+        assert_eq!(to_pascal_case("pepe dance"), "PepeDance");
+        assert_eq!(to_pascal_case("catJam"), "CatJam");
+        assert_eq!(to_pascal_case("PogChamp"), "PogChamp");
+        assert_eq!(to_pascal_case("OMEGALUL"), "Omegalul");
+        assert_eq!(to_pascal_case("tag_123"), "Tag123");
+        assert_eq!(to_pascal_case(""), "");
+        assert_eq!(to_pascal_case("   "), "");
+    }
+
+    #[test]
+    fn test_normalize_tags_str() {
+        assert_eq!(
+            normalize_tags_str("pepe, frog_dance, cool emote"),
+            "Pepe, FrogDance, CoolEmote"
+        );
+        assert_eq!(normalize_tags_str(""), "");
+    }
+
+    #[test]
+    fn test_update_emote_metadata_renames_file_on_disk() {
+        let tmp_dir = std::env::temp_dir().join(format!("test_rename_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+
+        let orig_file = tmp_dir.join("orig.webp");
+        fs::write(&orig_file, b"fake webp").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE emotes (id INTEGER PRIMARY KEY, name TEXT, tag TEXT, path TEXT);",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO emotes (id, name, tag, path) VALUES (1, 'OldName', 'tag1', ?1)",
+            params![orig_file.to_str().unwrap()],
+        )
+        .unwrap();
+
+        let new_path = update_emote_metadata_in_conn(
+            &conn,
+            1,
+            Some("NewAwesomeName".to_string()),
+            Some("tag1, newTag".to_string()),
+        )
+        .unwrap();
+
+        let expected_file = tmp_dir.join("NewAwesomeName.webp");
+        assert!(expected_file.exists());
+        assert!(!orig_file.exists());
+        assert_eq!(new_path, normalize_path(&expected_file));
+
+        let (db_name, db_tag, db_path): (String, String, String) = conn
+            .query_row("SELECT name, tag, path FROM emotes WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(db_name, "NewAwesomeName");
+        assert_eq!(db_tag, "Tag1, NewTag");
+        assert_eq!(db_path, normalize_path(&expected_file));
+
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_update_emote_metadata_rejects_duplicate_name() {
+        let tmp_dir = std::env::temp_dir().join(format!("test_dup_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+
+        let file1 = tmp_dir.join("pepe.webp");
+        let file2 = tmp_dir.join("cat.webp");
+        fs::write(&file1, b"pepe").unwrap();
+        fs::write(&file2, b"cat").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE emotes (id INTEGER PRIMARY KEY, name TEXT, tag TEXT, path TEXT);",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO emotes (id, name, path) VALUES (1, 'PepeDance', ?1), (2, 'CatJam', ?2)",
+            params![file1.to_str().unwrap(), file2.to_str().unwrap()],
+        )
+        .unwrap();
+
+        // 1. Intentar renombrar CatJam (id 2) a PepeDance (ya ocupado por id 1)
+        let err = update_emote_metadata_in_conn(&conn, 2, Some("pepe_dance".to_string()), None)
+            .unwrap_err();
+        assert!(err.contains("ya está ocupado"));
+
+        // 2. Intentar renombrar a un archivo que ya existe en disco aunque no esté en DB
+        let external_file = tmp_dir.join("Doge.webp");
+        fs::write(&external_file, b"doge").unwrap();
+
+        let err2 = update_emote_metadata_in_conn(&conn, 2, Some("doge".to_string()), None)
+            .unwrap_err();
+        assert!(err2.contains("ya está ocupado"));
+
+        let _ = fs::remove_dir_all(&tmp_dir);
     }
 }

@@ -2,6 +2,7 @@ import { writable, derived } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
 import type { Emote } from '$lib/types/emote';
 import { api } from '$lib/services/api';
+import { toPascalCase } from '$lib/utils/format';
 
 export type { Emote };
 
@@ -61,7 +62,7 @@ export const allTags: Readable<string[]> = derived(emotes, ($emotes) => {
     if (e.tag) {
       const parts = e.tag
         .split(',')
-        .map((t) => t.trim())
+        .map((t) => toPascalCase(t.trim()))
         .filter(Boolean);
       for (const t of parts) {
         set.add(t);
@@ -74,7 +75,18 @@ export const allTags: Readable<string[]> = derived(emotes, ($emotes) => {
 export async function loadEmotes() {
   try {
     const list = await api.listEmotes();
-    emotes.set(list ?? []);
+    const normalized = (list ?? []).map((e) => ({
+      ...e,
+      name: toPascalCase(e.name) || e.name,
+      tag: e.tag
+        ? e.tag
+            .split(',')
+            .map((t) => toPascalCase(t.trim()))
+            .filter(Boolean)
+            .join(', ')
+        : e.tag
+    }));
+    emotes.set(normalized);
   } catch (e) {
     console.error('Failed to load emotes', e);
   }

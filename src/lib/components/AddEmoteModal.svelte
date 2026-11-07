@@ -6,6 +6,7 @@
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
+  import { toPascalCase } from "$lib/utils/format";
   import type { Emote } from "$lib/types/emote";
   import {
     Alert,
@@ -154,7 +155,8 @@
     isError = false;
 
     try {
-      const result = await api.importFromClipboard(customName);
+      const normalizedName = customName.trim() ? toPascalCase(customName) : undefined;
+      const result = await api.importFromClipboard(normalizedName);
       customName = "";
       await loadEmotes();
 
@@ -200,7 +202,8 @@
     isError = false;
 
     try {
-      const created = await api.importFromUrl(urlValue.trim(), customName);
+      const normalizedName = customName.trim() ? toPascalCase(customName) : undefined;
+      const created = await api.importFromUrl(urlValue.trim(), normalizedName);
       urlValue = "";
       customName = "";
       showUrlInput = false;
@@ -240,7 +243,7 @@
           const file = dt.files[i];
           const buf = await file.arrayBuffer();
           const bytes = Array.from(new Uint8Array(buf));
-          const stem = file.name.replace(/\.[^/.]+$/, "") || "emote";
+          const stem = toPascalCase(file.name.replace(/\.[^/.]+$/, "")) || "Emote";
           await api.importRawBytes(bytes, stem);
           count++;
         }
@@ -336,9 +339,9 @@
             const buf = await file.arrayBuffer();
             const bytes = Array.from(new Uint8Array(buf));
             const stem = file.name
-              ? file.name.replace(/\.[^/.]+$/, "")
-              : "clipboard";
-            await api.importRawBytes(bytes, stem || "clipboard");
+              ? toPascalCase(file.name.replace(/\.[^/.]+$/, ""))
+              : "Clipboard";
+            await api.importRawBytes(bytes, stem || "Clipboard");
             count++;
           }
           await loadEmotes();

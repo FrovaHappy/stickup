@@ -4,7 +4,9 @@ import {
   getAvailableFormats,
   getMimeType,
   formatFileSize,
-  resolveDimensions
+  resolveDimensions,
+  toPascalCase,
+  formatSearchQueryInput
 } from './format';
 import type { Emote } from '$lib/types/emote';
 
@@ -63,5 +65,76 @@ describe('format utilities', () => {
       ])
     ).toEqual({ width: 110, height: 110 });
   });
+
+  describe('toPascalCase', () => {
+    it('normalizes single words and lowercase to PascalCase', () => {
+      expect(toPascalCase('pepe')).toBe('Pepe');
+      expect(toPascalCase('cat')).toBe('Cat');
+      expect(toPascalCase('frog')).toBe('Frog');
+    });
+
+    it('normalizes snake_case, kebab-case and spaces to PascalCase', () => {
+      expect(toPascalCase('pepe_dance')).toBe('PepeDance');
+      expect(toPascalCase('pepe-dance')).toBe('PepeDance');
+      expect(toPascalCase('pepe dance')).toBe('PepeDance');
+      expect(toPascalCase('cool__emote--super   fast')).toBe('CoolEmoteSuperFast');
+    });
+
+    it('preserves existing camelCase and PascalCase words', () => {
+      expect(toPascalCase('pepeHands')).toBe('PepeHands');
+      expect(toPascalCase('PogChamp')).toBe('PogChamp');
+      expect(toPascalCase('monkaS')).toBe('MonkaS');
+      expect(toPascalCase('catJam')).toBe('CatJam');
+    });
+
+    it('handles uppercase strings and tags', () => {
+      expect(toPascalCase('OMEGALUL')).toBe('Omegalul');
+      expect(toPascalCase('KEKW')).toBe('Kekw');
+      expect(toPascalCase('TWITCH_EMOTE')).toBe('TwitchEmote');
+    });
+
+    it('handles alphanumeric tags and unicode accents', () => {
+      expect(toPascalCase('tag1')).toBe('Tag1');
+      expect(toPascalCase('emote_123_test')).toBe('Emote123Test');
+      expect(toPascalCase('canción_triste')).toBe('CanciónTriste');
+    });
+
+    it('handles empty and null values gracefully', () => {
+      expect(toPascalCase('')).toBe('');
+      expect(toPascalCase('   ')).toBe('');
+      expect(toPascalCase(null)).toBe('');
+      expect(toPascalCase(undefined)).toBe('');
+    });
+  });
+
+  describe('formatSearchQueryInput', () => {
+    it('formats single words into PascalCase on the fly', () => {
+      expect(formatSearchQueryInput('p')).toBe('P');
+      expect(formatSearchQueryInput('pepe')).toBe('Pepe');
+    });
+
+    it('preserves trailing separator while typing next word', () => {
+      expect(formatSearchQueryInput('Pepe ')).toBe('Pepe ');
+      expect(formatSearchQueryInput('pepe_')).toBe('Pepe ');
+      expect(formatSearchQueryInput('pepe-')).toBe('Pepe ');
+    });
+
+    it('merges previous words and capitalizes new word when character typed', () => {
+      expect(formatSearchQueryInput('Pepe d')).toBe('PepeD');
+      expect(formatSearchQueryInput('Pepe da')).toBe('PepeDa');
+      expect(formatSearchQueryInput('Pepe dance')).toBe('PepeDance');
+    });
+
+    it('handles full pasted strings into clean PascalCase', () => {
+      expect(formatSearchQueryInput('pepe hands dance')).toBe('PepeHandsDance');
+    });
+
+    it('handles empty or blank search inputs', () => {
+      expect(formatSearchQueryInput('')).toBe('');
+      expect(formatSearchQueryInput('   ')).toBe('');
+      expect(formatSearchQueryInput('---')).toBe('');
+    });
+  });
 });
+
 

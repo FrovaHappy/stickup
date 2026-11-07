@@ -2,6 +2,7 @@
   import { Plus } from '@lucide/svelte';
   import { allTags } from '$lib/stores/emotes';
   import { Chip, Dropdown } from '$lib/components/system-ui';
+  import { toPascalCase, formatSearchQueryInput } from '$lib/utils/format';
 
   export let tagList: string[] = [];
   export let onChange: (newTags: string[]) => void;
@@ -13,12 +14,14 @@
   $: suggestedTags = ($allTags || [])
     .filter((t) => !tagList.some((existing) => existing.toLowerCase() === t.toLowerCase()))
     .filter((t) => {
-      if (!tagInputText.trim()) return true;
-      return t.toLowerCase().includes(tagInputText.trim().toLowerCase());
+      const q = tagInputText.trim().toLowerCase();
+      if (!q) return true;
+      const pascalQ = toPascalCase(tagInputText).toLowerCase();
+      return t.toLowerCase().includes(q) || (pascalQ ? t.toLowerCase().includes(pascalQ) : false);
     });
 
   function addTag(tagName: string) {
-    const clean = tagName.trim();
+    const clean = toPascalCase(tagName);
     if (!clean) return;
     if (tagList.some((t) => t.toLowerCase() === clean.toLowerCase())) {
       tagInputText = '';
@@ -26,6 +29,12 @@
     }
     onChange([...tagList, clean]);
     tagInputText = '';
+  }
+
+  function handleTagInput(e: Event) {
+    const target = e.currentTarget as HTMLInputElement;
+    tagInputText = formatSearchQueryInput(target.value);
+    target.value = tagInputText;
   }
 
   function removeTag(tagToRemove: string) {
@@ -74,7 +83,8 @@
         type="text"
         class="tag-inline-input"
         placeholder={tagList.length === 0 ? 'Escribe o busca un tag...' : 'Agregar tag...'}
-        bind:value={tagInputText}
+        value={tagInputText}
+        on:input={handleTagInput}
         on:focus={() => (showSuggestions = true)}
         on:keydown={handleKeydown}
       />

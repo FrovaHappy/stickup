@@ -17,8 +17,21 @@
     setSortOption,
   } from "$lib/stores/preferences";
   import type { GridSize, SortOption } from "$lib/types/preferences";
+  import { formatSearchQueryInput } from "$lib/utils/format";
 
   export let searchQuery = "";
+
+  function handleSearchInput(e: Event) {
+    const target = e.currentTarget as HTMLInputElement;
+    const original = target.value;
+    const formatted = formatSearchQueryInput(original);
+    searchQuery = formatted;
+    target.value = formatted;
+  }
+
+  function handleSearchBlur() {
+    searchQuery = searchQuery.trim();
+  }
 
   let sortMenuOpen = false;
   let gridMenuOpen = false;
@@ -107,7 +120,9 @@
         type="text"
         class="search-input"
         placeholder="Busca por nombre o por tags..."
-        bind:value={searchQuery}
+        value={searchQuery}
+        on:input={handleSearchInput}
+        on:blur={handleSearchBlur}
       />
       {#if searchQuery.trim()}
         <button

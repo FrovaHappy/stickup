@@ -94,3 +94,54 @@ export function resolveDimensions(
   }
   return { width: emote.original_width, height: emote.original_height };
 }
+
+/**
+ * Normaliza cualquier texto a convención PascalCase:
+ * - "pepe dance" -> "PepeDance"
+ * - "pepe_dance" -> "PepeDance"
+ * - "pepe-dance" -> "PepeDance"
+ * - "catJam" -> "CatJam"
+ * - "PogChamp" -> "PogChamp"
+ * - "OMEGALUL" -> "Omegalul"
+ */
+export function toPascalCase(str?: string | null): string {
+  if (!str) return '';
+  const trimmed = str.trim();
+  if (!trimmed) return '';
+
+  // Separar transiciones de camelCase / PascalCase / acrónimos
+  const separated = trimmed
+    .replace(/([a-z\d\u00C0-\u024F\u1E00-\u1EFF])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z\d\u00C0-\u024F\u1E00-\u1EFF]+)/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]+/g, ' ');
+
+  const words = separated.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+
+  return words
+    .map((word) => {
+      if (word.length === 0) return '';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join('');
+}
+
+/**
+ * Parsea el texto del buscador en tiempo real a PascalCase:
+ * Preserva un espacio al final si el usuario acaba de escribir un separador,
+ * y en el siguiente carácter lo compacta en el nuevo término en mayúscula.
+ */
+export function formatSearchQueryInput(input: string): string {
+  if (!input) return '';
+
+  if (!/[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]/.test(input)) {
+    return '';
+  }
+
+  const hasTrailingSeparator = /[\s_\-]+$/.test(input);
+  const parsed = toPascalCase(input);
+  if (!parsed) return '';
+
+  return hasTrailingSeparator ? `${parsed} ` : parsed;
+}
+

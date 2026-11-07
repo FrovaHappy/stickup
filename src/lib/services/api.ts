@@ -16,7 +16,7 @@ export const api = {
     invoke<Emote | Emote[]>('import_from_clipboard', { name: name?.trim() || null }),
   deleteEmote: (id: number) => invoke<boolean>('delete_emote', { id }),
   updateTag: (id: number, name: string, tag: string) =>
-    invoke<boolean>('update_tag', { id, name, tag }),
+    invoke<string>('update_tag', { id, name, tag }),
   copyToClipboard: (
     id: number,
     path: string,
