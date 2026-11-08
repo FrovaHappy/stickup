@@ -1,11 +1,6 @@
----
-name: ODD & StickUp Architecture
-description: ODD & StickUp Architecture skills for TDD & Organic Development in Rust/SvelteKit Project
----
-
 # ODD & StickUp Architecture
 
-Esta skill define las reglas arquitectónicas, la estructura de directorios, los estándares de código mínimo e indispensable y la metodología **Organic Driven Development (ODD)** para **StickUp**.
+Esta guía define las reglas arquitectónicas, la estructura de directorios, los estándares de código mínimo e indispensable y la metodología **Organic Driven Development (ODD)** para **StickUp**.
 
 ## 1. Metodología de Trabajo: Organic Driven Development (ODD)
 
@@ -88,7 +83,6 @@ src/
 
 ---
 
-
 ## 5. Guía de Diseño y Sistema de Color (Design System)
 
 La interfaz se rige por un tema oscuro (`#1a1a1c` / `#1c1c1f`) con **énfasis visual en el Naranja**. Todas las variables globales residen centralizadas en `src/global.css`.
@@ -112,3 +106,4 @@ La interfaz se rige por un tema oscuro (`#1a1a1c` / `#1c1c1f`) con **énfasis vi
 1. **Sin fondos pesados:** No usar fondos sólidos en tarjetas o paneles; usar `background: transparent;` con borde `1px solid var(--color-border-subtle);`.
 2. **Focus accesible:** Todo foco por teclado (`:focus-visible`) usa `outline: 2px solid var(--color-orange-primary); outline-offset: 2px;`.
 3. **Zero Hardcoded Colors:** Usar siempre las variables de `global.css` en lugar de colores hexadecimales dispersos.
+
