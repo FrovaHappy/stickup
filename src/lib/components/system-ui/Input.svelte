@@ -12,6 +12,7 @@
   export let active = false;
   export let variant: InputVariant = "default";
   export let title: string | undefined = undefined;
+  export let ariaLabel: string | undefined = undefined;
   export let inputElement: HTMLInputElement | null = null;
 
   const dispatch = createEventDispatcher<{
@@ -57,6 +58,7 @@
       {disabled}
       {required}
       {title}
+      aria-label={ariaLabel}
       class="ui-input-field {readonly ? 'is-readonly' : ''}"
       on:focus={(e) => dispatch("focus", e)}
       on:blur={(e) => dispatch("blur", e)}

@@ -519,10 +519,10 @@
 
                 <div class="card-badges">
                   {#if img.saved}
-                    <Badge variant="success">Guardado</Badge>
+                    <Badge variant="green">Guardado</Badge>
                   {/if}
                   {#if img.format_hint}
-                    <Badge variant="neutral">{img.format_hint.toUpperCase()}</Badge>
+                    <Badge variant="gray">{img.format_hint.toUpperCase()}</Badge>
                   {/if}
                 </div>
               </div>
@@ -548,7 +548,13 @@
               </div>
 
               <!-- Metadatos y Acciones de la Card -->
-              <div class="card-footer" on:click|stopPropagation>
+              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+              <div
+                class="card-footer"
+                role="presentation"
+                on:click|stopPropagation
+                on:keydown|stopPropagation
+              >
                 <div class="card-name-input">
                   <input
                     type="text"
