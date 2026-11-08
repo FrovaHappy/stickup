@@ -1,6 +1,6 @@
 [package]
 name = "stickup"
-version = "0.1.1-dev.4"
+version = "0.1.1"
 description = "StickUp - Gestor de Emotes"
 authors = ["FrovaHappy"]
 license = "MIT"
