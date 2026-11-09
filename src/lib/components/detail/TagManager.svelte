@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus } from '@lucide/svelte';
+  import { Plus, Tag } from '@lucide/svelte';
   import { allTags } from '$lib/stores/emotes';
   import { Chip, Dropdown } from '$lib/components/system-ui';
   import { toPascalCase, formatSearchQueryInput } from '$lib/utils/format';
@@ -57,7 +57,10 @@
 
 <div class="tags-section">
   <div class="section-header-row">
-    <h3 class="section-title">TAGS</h3>
+    <div class="section-title-wrap">
+      <Tag size={13} class="tag-header-icon" />
+      <h3 class="section-title">TAGS</h3>
+    </div>
     <span class="tags-counter">{tagList.length} {tagList.length === 1 ? 'tag' : 'tags'}</span>
   </div>
 
@@ -69,7 +72,7 @@
     >
       {#each tagList as t}
         <Chip
-          variant="indigo"
+          variant="amber"
           removable
           removeTitle="Eliminar tag"
           on:remove={() => removeTag(t)}
@@ -92,7 +95,7 @@
 
     <Dropdown
       open={showSuggestions && suggestedTags.length > 0}
-      title="🏷️ Tags globales existentes"
+      title="Tags globales existentes"
       subtitle="{suggestedTags.length} disponibles"
       maxHeight="200px"
       on:close={() => (showSuggestions = false)}
@@ -125,7 +128,7 @@
     flex-direction: column;
     gap: 8px;
     text-align: left;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     padding-top: 12px;
     position: relative;
   }
@@ -134,17 +137,25 @@
     align-items: center;
     justify-content: space-between;
   }
+  .section-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  :global(.tag-header-icon) {
+    color: var(--color-orange-primary, #f97316);
+  }
   .section-title {
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.5px;
-    color: #9ca3af;
+    color: var(--color-text-muted, #9ca3af);
     margin: 0;
   }
   .tags-counter {
     font-size: 11px;
     font-weight: 600;
-    color: #6b7280;
+    color: var(--color-text-dim, #71717a);
   }
   .tag-manager-wrapper {
     position: relative;
@@ -155,8 +166,8 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    background: #2b2b2f;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--color-bg-input, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     border-radius: 10px;
     padding: 6px 10px;
     min-height: 42px;
@@ -164,21 +175,21 @@
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .tag-box-container:focus-within {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    border-color: var(--color-orange-primary, #f97316);
+    box-shadow: 0 0 0 2px var(--color-orange-focus-ring, rgba(249, 115, 22, 0.25));
   }
   .tag-inline-input {
     flex: 1;
     min-width: 100px;
     background: transparent;
     border: none;
-    color: #f3f4f6;
+    color: var(--color-text-main, #f3f4f6);
     font-size: 13px;
     outline: none;
     padding: 4px 2px;
   }
   .tag-inline-input::placeholder {
-    color: #6b7280;
+    color: var(--color-text-dim, #71717a);
   }
   .tag-dropdown-list {
     display: flex;
@@ -201,7 +212,7 @@
     transition: background 0.12s ease;
   }
   .tag-dropdown-item:hover {
-    background: rgba(99, 102, 241, 0.18);
+    background: rgba(var(--color-orange-rgb, 249, 115, 22), 0.15);
   }
   .tag-item-name {
     font-weight: 500;
@@ -211,7 +222,7 @@
     align-items: center;
     gap: 4px;
     font-size: 11px;
-    color: #818cf8;
+    color: var(--color-orange-primary, #f97316);
     font-weight: 600;
   }
 </style>

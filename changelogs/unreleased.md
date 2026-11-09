@@ -10,6 +10,8 @@
 
 ### Changed
 - Conexión de la versión en Ajustes ("Acerca de StickUp") a la versión real de `Cargo.toml` (`get_app_version`).
+- Rediseño del modal de información del emote (`EmoteDetailModal`): reubicación de la sección de tags justo debajo del botón principal de copiar, ampliación del ancho a 750px y organización en cuadrícula limpia de metadatos.
+- Alineación del diseño visual e iconografía de `EmoteDetailModal` y `TagManager` con el Design System de StickUp (uso de `@lucide/svelte`, badges semánticos, chips en ámbar y tokens `--color-orange-primary`).
 
 ### Fixed
 - 

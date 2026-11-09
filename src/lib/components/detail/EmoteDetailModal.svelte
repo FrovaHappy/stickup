@@ -1,6 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Copy, Check, Download, Trash2 } from '@lucide/svelte';
+  import {
+    Copy,
+    Check,
+    Download,
+    Trash2,
+    Plus,
+    X,
+    ArrowRight,
+    Flame,
+    Sparkles,
+    MousePointerClick,
+    AlertCircle
+  } from '@lucide/svelte';
   import type { Emote } from '$lib/types/emote';
   import { api } from '$lib/services/api';
   import emotes, {
@@ -321,7 +333,7 @@
 <svelte:window on:keydown={handleKeyDown} />
 
 {#if emote}
-  <Modal open={true} title="INFO" maxWidth="440px" {onClose}>
+  <Modal open={true} title="INFORMACIÓN DEL EMOTE" maxWidth="600px" {onClose}>
     <div class="top-row">
       <div class="preview-box">
         <img
@@ -351,7 +363,8 @@
         </Input>
         {#if nameError}
           <div class="name-occupied-legend">
-            <span>⚠️ {nameError}</span>
+            <AlertCircle size={13} />
+            <span>{nameError}</span>
           </div>
         {/if}
 
@@ -396,11 +409,15 @@
         {/each}
 
         <Chip
-          variant="sky"
+          variant="amber"
           active={showCustomSizeInput}
           on:click={() => (showCustomSizeInput = !showCustomSizeInput)}
         >
-          {showCustomSizeInput ? '✕ Cancelar' : '➕ Personalizado'}
+          {#if showCustomSizeInput}
+            <X size={13} /> Cancelar
+          {:else}
+            <Plus size={13} /> Personalizado
+          {/if}
         </Chip>
       </div>
 
@@ -465,6 +482,11 @@
       <span>{copyButtonText}</span>
     </Button>
 
+    <TagManager
+      {tagList}
+      onChange={(newTags) => persistMetadata(emoteName, newTags)}
+    />
+
     <div class="meta-section">
       <div class="meta-line">
         <span class="meta-key">Resolución:</span>
@@ -478,13 +500,26 @@
             <span class="meta-value muted">
               {emote.original_width}×{emote.original_height} px
             </span>
-            <span class="arrow-sep">➜</span>
+            <ArrowRight size={12} class="arrow-sep" />
             <span class="meta-value bold highlight">
               {targetDimensions.width}×{targetDimensions.height} px
             </span>
             {#if resolutionDiffPercent !== null}
-              <Badge variant="blue">{resolutionDiffPercent}% px</Badge>
+              <Badge variant="amber">{resolutionDiffPercent}% px</Badge>
             {/if}
+          {/if}
+        </div>
+      </div>
+
+      <div class="meta-line">
+        <span class="meta-key">Formato:</span>
+        <div class="meta-comparison">
+          {#if emote.format && selectedFormat.toUpperCase() !== emote.format.toUpperCase()}
+            <span class="meta-value muted">{emote.format.toUpperCase()}</span>
+            <ArrowRight size={12} class="arrow-sep" />
+            <span class="meta-value bold highlight">{selectedFormat.toUpperCase()}</span>
+          {:else}
+            <span class="meta-value bold">{selectedFormat.toUpperCase()}</span>
           {/if}
         </div>
       </div>
@@ -496,7 +531,7 @@
             <span class="meta-value muted">Calculando...</span>
           {:else if newFileSize !== null && emote.file_size && emote.file_size !== newFileSize}
             <span class="meta-value muted">{formatFileSize(emote.file_size)}</span>
-            <span class="arrow-sep">➜</span>
+            <ArrowRight size={12} class="arrow-sep" />
             <span class="meta-value bold highlight">{formatFileSize(newFileSize)}</span>
             {#if sizeDiffPercent !== null}
               <Badge variant={sizeDiffPercent < 0 ? 'green' : 'amber'}>
@@ -517,37 +552,6 @@
       </div>
 
       <div class="meta-line">
-        <span class="meta-key">Type:</span>
-        <div class="meta-comparison">
-          {#if emote.format && selectedFormat.toUpperCase() !== emote.format.toUpperCase()}
-            <span class="meta-value muted">{emote.format.toUpperCase()}</span>
-            <span class="arrow-sep">➜</span>
-            <span class="meta-value bold highlight">{selectedFormat.toUpperCase()}</span>
-          {:else}
-            <span class="meta-value bold">{selectedFormat.toUpperCase()}</span>
-          {/if}
-        </div>
-      </div>
-
-      <div class="meta-line">
-        <span class="meta-key">Estadísticas:</span>
-        <div class="meta-comparison">
-          <Badge variant="blue">
-            📋 {copyCount} {copyCount === 1 ? 'copia' : 'copias'}
-          </Badge>
-          <Badge variant="gray">
-            👆 {interactionCount} {interactionCount === 1 ? 'interacción' : 'interacciones'}
-          </Badge>
-          {#if isHot}
-            <Badge variant="amber">🔥 Top #{hotRank}</Badge>
-          {/if}
-          {#if isNew}
-            <Badge variant="green">🍃 Nuevo</Badge>
-          {/if}
-        </div>
-      </div>
-
-      <div class="meta-line">
         <span class="meta-key">Creado:</span>
         <div class="meta-comparison">
           <span class="meta-value">
@@ -555,12 +559,33 @@
           </span>
         </div>
       </div>
-    </div>
 
-    <TagManager
-      {tagList}
-      onChange={(newTags) => persistMetadata(emoteName, newTags)}
-    />
+      <div class="meta-line full-span">
+        <span class="meta-key">Estadísticas:</span>
+        <div class="meta-comparison">
+          <Badge variant="amber">
+            <Copy size={11} />
+            <span>{copyCount} {copyCount === 1 ? 'copia' : 'copias'}</span>
+          </Badge>
+          <Badge variant="gray">
+            <MousePointerClick size={11} />
+            <span>{interactionCount} {interactionCount === 1 ? 'interacción' : 'interacciones'}</span>
+          </Badge>
+          {#if isHot}
+            <Badge variant="hot">
+              <Flame size={11} />
+              <span>Top #{hotRank}</span>
+            </Badge>
+          {/if}
+          {#if isNew}
+            <Badge variant="new">
+              <Sparkles size={11} />
+              <span>Nuevo</span>
+            </Badge>
+          {/if}
+        </div>
+      </div>
+    </div>
 
     <svelte:fragment slot="footer">
       <Button variant="outline" size="sm" on:click={downloadResizedImage}>
@@ -598,14 +623,14 @@
   .preview-box {
     width: 140px;
     height: 140px;
-    background: #2b2b2f;
+    background: var(--color-bg-input, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 12px;
     flex-shrink: 0;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
   }
   .preview-img {
     max-width: 100%;
@@ -630,7 +655,7 @@
   .options-label {
     font-size: 12px;
     font-weight: 600;
-    color: #9ca3af;
+    color: var(--color-text-muted, #9ca3af);
   }
   .pills-row {
     display: flex;
@@ -638,12 +663,12 @@
     gap: 6px;
   }
   .meta-section {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 6px 16px;
     text-align: left;
     font-size: 13px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     padding-top: 12px;
   }
   .meta-line {
@@ -652,8 +677,11 @@
     gap: 8px;
     min-height: 24px;
   }
+  .meta-line.full-span {
+    grid-column: 1 / -1;
+  }
   .meta-key {
-    color: #9ca3af;
+    color: var(--color-text-muted, #9ca3af);
     min-width: 85px;
     font-size: 13px;
   }
@@ -663,9 +691,8 @@
     gap: 6px;
     flex-wrap: wrap;
   }
-  .arrow-sep {
-    color: #6b7280;
-    font-size: 11px;
+  :global(.arrow-sep) {
+    color: var(--color-text-dim, #71717a);
   }
   .meta-value {
     color: inherit;
@@ -674,22 +701,22 @@
     font-weight: 700;
   }
   .meta-value.muted {
-    color: #9ca3af;
+    color: var(--color-text-dim, #71717a);
     text-decoration: line-through;
     opacity: 0.75;
     font-size: 12px;
   }
   .meta-value.highlight {
-    color: #facc15;
+    color: var(--color-orange-primary, #f97316);
   }
   .custom-size-form {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--color-bg-input, rgba(0, 0, 0, 0.25));
     padding: 8px 12px;
     border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     margin-top: 4px;
   }
   .custom-size-inputs {
@@ -705,13 +732,13 @@
   }
   .custom-input-label {
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--color-text-muted, #9ca3af);
     font-weight: 500;
   }
   .size-num-input {
     width: 60px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: var(--color-bg-input, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--color-border-strong, rgba(255, 255, 255, 0.16));
     border-radius: 6px;
     padding: 4px 6px;
     font-size: 12px;
@@ -720,20 +747,21 @@
   }
   .size-num-input:focus {
     outline: none;
-    border-color: #6366f1;
+    border-color: var(--color-orange-primary, #f97316);
+    box-shadow: 0 0 0 2px var(--color-orange-focus-ring, rgba(249, 115, 22, 0.25));
   }
   .size-cross {
-    color: #9ca3af;
+    color: var(--color-text-dim, #71717a);
     font-weight: 700;
   }
   .custom-size-error {
     font-size: 11px;
-    color: #f87171;
+    color: var(--color-warning-primary, #ea580c);
   }
   .name-occupied-legend {
     font-size: 11.5px;
     font-weight: 600;
-    color: #f87171;
+    color: var(--color-warning-primary, #ea580c);
     margin-top: -6px;
     display: flex;
     align-items: center;

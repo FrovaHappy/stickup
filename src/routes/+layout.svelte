@@ -56,12 +56,15 @@
         href="/settings"
         class="nav-btn nav-btn-relative"
         class:active={$page.url.pathname.startsWith("/settings")}
-        title={$availableUpdate?.hasUpdate ? "Configuración (Actualización disponible)" : "Configuración"}
+        title={$availableUpdate?.hasUpdate
+          ? "Configuración (Actualización disponible)"
+          : "Configuración"}
         aria-label="Configuración"
       >
         <Settings size={22} strokeWidth={2.2} />
         {#if $availableUpdate?.hasUpdate}
-          <span class="update-indicator-dot" class:hot={$availableUpdate.isHot}></span>
+          <span class="update-indicator-dot" class:hot={$availableUpdate.isHot}
+          ></span>
         {/if}
       </a>
 
@@ -154,7 +157,8 @@
   }
 
   @keyframes pulse-hot {
-    0%, 100% {
+    0%,
+    100% {
       opacity: 1;
       transform: scale(1);
     }
