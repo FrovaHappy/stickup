@@ -4,6 +4,7 @@
   import EmoteGrid from '$lib/components/EmoteGrid.svelte';
   import MainHeader from '$lib/components/MainHeader.svelte';
   import EmoteDetailModal from '$lib/components/detail/EmoteDetailModal.svelte';
+  import DeleteEmoteModal from '$lib/components/DeleteEmoteModal.svelte';
   import { ContextMenu } from '$lib/components/system-ui';
   import { api } from '$lib/services/api';
   import emotes, { loadEmotes, type Emote } from '$lib/stores/emotes';
@@ -14,6 +15,7 @@
   import { toPascalCase, isAnimatedEmote } from '$lib/utils/format';
 
   let selected: Emote | null = null;
+  let emoteToDelete: Emote | null = null;
   let searchQuery = '';
   let contextMenuOpen = false;
   let contextMenuPos = { x: 0, y: 0 };
@@ -110,16 +112,8 @@
     }
   }
 
-  async function handleDeleteEmote(emote: Emote) {
-    if (confirm(`¿Eliminar emote "${emote.name}" de forma permanente?`)) {
-      try {
-        await api.deleteEmote(emote.id);
-        toast.success(`✓ Emote "${emote.name}" eliminado`);
-        await loadEmotes();
-      } catch (err: any) {
-        toast.error(`Error al eliminar: ${err?.message || err}`);
-      }
-    }
+  function handleDeleteEmote(emote: Emote) {
+    emoteToDelete = emote;
   }
 
   function handleContextMenu(detail: { emote: Emote; event: MouseEvent }) {
@@ -253,6 +247,20 @@
 
   {#if selected}
     <EmoteDetailModal emote={selected} onClose={closeDetail} />
+  {/if}
+
+  {#if emoteToDelete}
+    <DeleteEmoteModal
+      emote={emoteToDelete}
+      open={true}
+      onClose={() => (emoteToDelete = null)}
+      onDeleted={() => {
+        if (selected && selected.id === emoteToDelete?.id) {
+          selected = null;
+        }
+        emoteToDelete = null;
+      }}
+    />
   {/if}
 
   <ContextMenu

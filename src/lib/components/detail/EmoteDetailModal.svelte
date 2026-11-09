@@ -30,6 +30,7 @@
   import { Alert, Badge, Button, Chip, Input, Modal } from '$lib/components/system-ui';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import TagManager from './TagManager.svelte';
+  import DeleteEmoteModal from '../DeleteEmoteModal.svelte';
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
@@ -53,6 +54,7 @@
   let customHeight = 96;
   let customSizeError = '';
   let nameError = '';
+  let showDeleteConfirm = false;
 
   function handleAddCustomSize() {
     customSizeError = '';
@@ -308,16 +310,9 @@
     }
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!emote) return;
-    if (confirm(`¿Eliminar emote "${emote.name}" de forma permanente?`)) {
-      try {
-        await api.deleteEmote(emote.id);
-        onClose();
-      } catch (e: any) {
-        showToast(`Error: ${e?.message || e}`);
-      }
-    }
+    showDeleteConfirm = true;
   }
 </script>
 
@@ -578,6 +573,18 @@
       <Alert variant="toast">{copyFeedback}</Alert>
     {/if}
   </Modal>
+{/if}
+
+{#if showDeleteConfirm && emote}
+  <DeleteEmoteModal
+    {emote}
+    open={true}
+    onClose={() => (showDeleteConfirm = false)}
+    onDeleted={() => {
+      showDeleteConfirm = false;
+      onClose();
+    }}
+  />
 {/if}
 
 <style>
