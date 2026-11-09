@@ -104,8 +104,21 @@ pub fn copy_emote(
 
         let out_file = fs::File::create(&temp_file).map_err(|e| e.to_string())?;
         let mut encoder = GifEncoder::new(out_file);
+        let repeat_mode = if let Ok(bytes) = fs::read(p) {
+            if let Ok(status) = crate::services::gif::inspect_gif_loop(&bytes) {
+                if status.is_infinite {
+                    Repeat::Infinite
+                } else {
+                    Repeat::Finite(status.loop_count.unwrap_or(1))
+                }
+            } else {
+                Repeat::Infinite
+            }
+        } else {
+            Repeat::Infinite
+        };
         encoder
-            .set_repeat(Repeat::Infinite)
+            .set_repeat(repeat_mode)
             .map_err(|e| e.to_string())?;
         encoder
             .encode_frames(resized_frames.into_iter())

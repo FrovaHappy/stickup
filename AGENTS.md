@@ -89,11 +89,11 @@ src/
 
 ## 4. Checklist de Verificación (Fase `Verify` de ODD)
 
-1. Verificar que compile sin error la aplicación:
+1. Verificar que compile sin error la aplicación SIEMPRE UTILIZANDO:
    `pnpm run prebuild`
 2. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `.agents/odd/tasks/{feature-slug}.md` si la tarea fue sustancial.
 3. **Mantener al día el Version Log**:
-   - Documentar todo cambio relevante (feature, refactor, fix) en [changelogs/unreleased.md](file:///c:/Users/happy/repos/stickup/changelogs/unreleased.md) bajo la categoría correspondiente (`Added`, `Changed`, `Fixed`, etc.), siguiendo la skill [.agents/skills/release-notes/SKILL.md](file:///c:/Users/happy/repos/stickup/.agents/skills/release-notes/SKILL.md) y las especificaciones de **Keep a Changelog** y **Semantic Versioning**.
+   - Documentar todo cambio relevante (feature, refactor, fix) en [changelogs/unreleased.md](file:///c:/Users/happy/repos/stickup/changelogs/unreleased.md) bajo la categoría correspondiente (`Added`, `Changed`, `Fixed`, etc.), siguiendo la skill [.agents/skills/release-notes/SKILL.md](file:///c:/Users/happy/repos/stickup/.agents/skills/release-notes/SKILL.md) y las especificaciones de **Keep a Changelog** y **Semantic Versioning**, con redacción corta, directa y concisa (máximo 1 línea por ítem).
    - El CI consumirá este archivo para congelarlo en `changelogs/v{VERSION}.md` e inyectarlo en GitHub Releases sin necesidad de resúmenes monolíticos.
 
 ---

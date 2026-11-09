@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ClipboardInspectResult, Emote, ResyncStats } from '$lib/types/emote';
+import type { ClipboardInspectResult, Emote, GifLoopStatus, ResyncStats } from '$lib/types/emote';
 import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
 import type { ScannedImage, RawScannedItem, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
 
@@ -44,6 +44,13 @@ export const api = {
   getMinimizeOnCopy: () => invoke<boolean>('get_minimize_on_copy'),
   setMinimizeOnCopy: (enabled: boolean) =>
     invoke<void>('set_minimize_on_copy', { enabled }),
+  getForceGifLoop: () => invoke<boolean>('get_force_gif_loop'),
+  setForceGifLoop: (enabled: boolean) =>
+    invoke<void>('set_force_gif_loop', { enabled }),
+  getEmoteGifLoop: (id: number) =>
+    invoke<GifLoopStatus>('get_emote_gif_loop', { id }),
+  setEmoteGifLoop: (id: number, infinite: boolean) =>
+    invoke<GifLoopStatus>('set_emote_gif_loop', { id, infinite }),
   minimizeWindow: () => invoke<void>('minimize_window'),
   getGlobalShortcut: () => invoke<string>('get_global_shortcut'),
   setGlobalShortcut: (shortcut: string) =>

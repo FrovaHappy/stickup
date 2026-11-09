@@ -239,9 +239,14 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
     let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
 
     let (w, h, format) = if is_animated_gif {
-        fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        let final_bytes = if db::get_force_gif_loop(&conn) {
+            crate::services::gif::patch_gif_loop(bytes, true).unwrap_or_else(|_| bytes.to_vec())
+        } else {
+            bytes.to_vec()
+        };
+        fs::write(&dest, &final_bytes).map_err(|e| e.to_string())?;
         let (w, h) = gif_dimensions.unwrap_or_else(|| {
-            image::load_from_memory(bytes)
+            image::load_from_memory(&final_bytes)
                 .map(|i| i.dimensions())
                 .unwrap_or((0, 0))
         });
@@ -784,7 +789,19 @@ fn import_single_file(
     let dest = abs_dir.join(format!("{}.{}", uuid::Uuid::new_v4(), target_ext));
 
     let (w, h, format) = if is_animated_gif {
-        fs::copy(src, &dest).map_err(|e| e.to_string())?;
+        if db::get_force_gif_loop(conn) {
+            if let Ok(src_bytes) = fs::read(src) {
+                if let Ok(patched) = crate::services::gif::patch_gif_loop(&src_bytes, true) {
+                    fs::write(&dest, patched).map_err(|e| e.to_string())?;
+                } else {
+                    fs::copy(src, &dest).map_err(|e| e.to_string())?;
+                }
+            } else {
+                fs::copy(src, &dest).map_err(|e| e.to_string())?;
+            }
+        } else {
+            fs::copy(src, &dest).map_err(|e| e.to_string())?;
+        }
         let (w, h) = gif_dimensions.unwrap_or_else(|| {
             image::open(&dest).map(|i| i.dimensions()).unwrap_or((0, 0))
         });
@@ -1651,6 +1668,53 @@ pub fn set_minimize_on_copy(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn get_force_gif_loop() -> Result<bool, String> {
+    let conn = db::ensure_db()?;
+    Ok(db::get_force_gif_loop(&conn))
+}
+
+#[tauri::command]
+pub fn set_force_gif_loop(enabled: bool) -> Result<(), String> {
+    let conn = db::ensure_db()?;
+    db::set_force_gif_loop(&conn, enabled)
+}
+
+#[tauri::command]
+pub fn get_emote_gif_loop(id: i64) -> Result<crate::services::gif::GifLoopStatus, String> {
+    let conn = db::ensure_db()?;
+    let path: String = conn
+        .query_row(
+            "SELECT path FROM emotes WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("Emote no encontrado: {}", e))?;
+    let clean = clean_path_str(&path);
+    let bytes = fs::read(&clean).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
+    crate::services::gif::inspect_gif_loop(&bytes)
+}
+
+#[tauri::command]
+pub fn set_emote_gif_loop(
+    id: i64,
+    infinite: bool,
+) -> Result<crate::services::gif::GifLoopStatus, String> {
+    let conn = db::ensure_db()?;
+    let path: String = conn
+        .query_row(
+            "SELECT path FROM emotes WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("Emote no encontrado: {}", e))?;
+    let clean = clean_path_str(&path);
+    let bytes = fs::read(&clean).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
+    let patched = crate::services::gif::patch_gif_loop(&bytes, infinite)?;
+    fs::write(&clean, &patched).map_err(|e| format!("No se pudo escribir el archivo: {}", e))?;
+    crate::services::gif::inspect_gif_loop(&patched)
+}
+
+#[tauri::command]
 pub fn minimize_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     if let Some(window) = app.get_webview_window("main") {
@@ -2357,6 +2421,40 @@ mod tests {
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(err.contains("ya existe"));
+
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_patch_gif_loop_integration() {
+        let tmp_dir = std::env::temp_dir().join(format!("stickup_test_loop_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let gif_file = tmp_dir.join("test_anim.gif");
+
+        let mut gif_bytes = Vec::new();
+        gif_bytes.extend_from_slice(b"GIF89a");
+        gif_bytes.extend_from_slice(&[10, 0, 10, 0, 0x80, 0, 0]);
+        gif_bytes.extend_from_slice(&[255, 0, 0, 0, 0, 255]);
+        gif_bytes.extend_from_slice(&[0x21, 0xF9, 0x04, 0x00, 10, 0, 0x00, 0x00]);
+        gif_bytes.extend_from_slice(&[0x2C, 0, 0, 0, 0, 10, 0, 10, 0, 0x00]);
+        gif_bytes.push(0x02);
+        gif_bytes.extend_from_slice(&[0x02, 0x44, 0x01, 0x00]);
+        gif_bytes.push(0x3B);
+        fs::write(&gif_file, &gif_bytes).unwrap();
+
+        let initial_status = crate::services::gif::inspect_gif_loop(&fs::read(&gif_file).unwrap()).unwrap();
+        assert!(!initial_status.is_infinite);
+
+        let patched_infinite = crate::services::gif::patch_gif_loop(&fs::read(&gif_file).unwrap(), true).unwrap();
+        fs::write(&gif_file, &patched_infinite).unwrap();
+        let status_infinite = crate::services::gif::inspect_gif_loop(&fs::read(&gif_file).unwrap()).unwrap();
+        assert!(status_infinite.is_infinite);
+
+        let patched_finite = crate::services::gif::patch_gif_loop(&fs::read(&gif_file).unwrap(), false).unwrap();
+        fs::write(&gif_file, &patched_finite).unwrap();
+        let status_finite = crate::services::gif::inspect_gif_loop(&fs::read(&gif_file).unwrap()).unwrap();
+        assert!(!status_finite.is_infinite);
+        assert_eq!(status_finite.loop_count, Some(1));
 
         let _ = fs::remove_dir_all(&tmp_dir);
     }

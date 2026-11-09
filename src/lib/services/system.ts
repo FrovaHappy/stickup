@@ -12,6 +12,8 @@ export interface SystemService {
   setMinimizeToTray(enabled: boolean): Promise<boolean>;
   isMinimizeOnCopy(): Promise<boolean>;
   setMinimizeOnCopy(enabled: boolean): Promise<boolean>;
+  isForceGifLoop(): Promise<boolean>;
+  setForceGifLoop(enabled: boolean): Promise<boolean>;
   minimizeWindow(): Promise<boolean>;
   getGlobalShortcut(): Promise<string>;
   setGlobalShortcut(shortcut: string): Promise<string>;
@@ -58,6 +60,19 @@ export const systemService: SystemService = {
 
   async setMinimizeOnCopy(enabled: boolean): Promise<boolean> {
     await api.setMinimizeOnCopy(enabled);
+    return true;
+  },
+
+  async isForceGifLoop(): Promise<boolean> {
+    try {
+      return await api.getForceGifLoop();
+    } catch {
+      return true;
+    }
+  },
+
+  async setForceGifLoop(enabled: boolean): Promise<boolean> {
+    await api.setForceGifLoop(enabled);
     return true;
   },
 

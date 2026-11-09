@@ -11,9 +11,10 @@
     Flame,
     Sparkles,
     MousePointerClick,
-    AlertCircle
+    AlertCircle,
+    RotateCcw
   } from '@lucide/svelte';
-  import type { Emote } from '$lib/types/emote';
+  import type { Emote, GifLoopStatus } from '$lib/types/emote';
   import { api } from '$lib/services/api';
   import emotes, {
     loadEmotes,
@@ -69,6 +70,39 @@
   let nameError = '';
   let showDeleteConfirm = false;
 
+  let gifLoopStatus: GifLoopStatus | null = null;
+  let isUpdatingLoop = false;
+  let previewCacheBuster = 0;
+
+  async function checkGifLoop() {
+    if (!emote || !isAnimatedEmote(emote)) return;
+    try {
+      gifLoopStatus = await api.getEmoteGifLoop(emote.id);
+    } catch (e) {
+      console.error('Error al consultar bucle de GIF:', e);
+    }
+  }
+
+  async function toggleGifLoop() {
+    if (!emote || !isAnimatedEmote(emote) || isUpdatingLoop) return;
+    isUpdatingLoop = true;
+    try {
+      const targetInfinite = !gifLoopStatus?.is_infinite;
+      gifLoopStatus = await api.setEmoteGifLoop(emote.id, targetInfinite);
+      previewCacheBuster += 1;
+      if (targetInfinite) {
+        toast.success('Bucle infinito activado para este GIF');
+      } else {
+        toast.info('Bucle infinito desactivado (se reproducirá 1 vez y se frenará)');
+      }
+    } catch (e) {
+      console.error('Error al actualizar bucle de GIF:', e);
+      toast.error('No se pudo actualizar el bucle del GIF');
+    } finally {
+      isUpdatingLoop = false;
+    }
+  }
+
   function handleAddCustomSize() {
     customSizeError = '';
     const preset = addCustomSize(customWidth, customHeight);
@@ -106,6 +140,9 @@
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
+    if (isAnimatedEmote(emote)) {
+      checkGifLoop();
+    }
   }
 
   $: isAnimated = isAnimatedEmote(emote);
@@ -337,7 +374,7 @@
     <div class="top-row">
       <div class="preview-box">
         <img
-          src={convertFileSrc(emote.path)}
+          src={`${convertFileSrc(emote.path)}${previewCacheBuster ? `?t=${previewCacheBuster}` : ''}`}
           alt={emote.name}
           class="preview-img"
         />
@@ -471,6 +508,35 @@
         {/each}
       </div>
     </div>
+
+    {#if isAnimated}
+      <div class="options-section">
+        <div class="options-label">
+          Bucle de animación del GIF:
+        </div>
+        <div class="gif-loop-row">
+          <div class="gif-loop-info">
+            <span class="loop-badge" class:loop-infinite={gifLoopStatus?.is_infinite}>
+              {gifLoopStatus?.is_infinite ? 'Bucle Infinito (Continuo)' : '1 Reproducción (Se frena)'}
+            </span>
+            <span class="loop-desc">
+              {gifLoopStatus?.is_infinite
+                ? 'El emote se anima sin detenerse en la app y al pegarlo en Discord/chats.'
+                : 'El emote se reproduce 1 vez y se congela en el último frame en la app y al pegarlo.'}
+            </span>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={isUpdatingLoop || !gifLoopStatus}
+            on:click={toggleGifLoop}
+          >
+            <RotateCcw size={14} />
+            <span>{gifLoopStatus?.is_infinite ? 'Desactivar bucle (Frenar)' : 'Activar bucle infinito'}</span>
+          </Button>
+        </div>
+      </div>
+    {/if}
 
     <Button
       variant="primary"
@@ -766,5 +832,33 @@
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+  .gif-loop-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--color-bg-input, rgba(0, 0, 0, 0.2));
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  }
+  .gif-loop-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .loop-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-dim, #a1a1aa);
+  }
+  .loop-badge.loop-infinite {
+    color: var(--color-orange-primary, #f97316);
+  }
+  .loop-desc {
+    font-size: 11px;
+    color: var(--color-text-dim, #71717a);
+    line-height: 1.3;
   }
 </style>

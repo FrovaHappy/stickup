@@ -3,6 +3,7 @@ import {
   autostartEnabled,
   minimizeToTrayEnabled,
   minimizeOnCopyEnabled,
+  forceGifLoopEnabled,
   globalShortcut,
   DEFAULT_GLOBAL_SHORTCUT,
   systemSettingsLoading,
@@ -10,6 +11,7 @@ import {
   setAutostartSetting,
   setMinimizeToTraySetting,
   setMinimizeOnCopySetting,
+  setForceGifLoopSetting,
   triggerMinimizeWindow,
   setGlobalShortcutSetting,
   formatShortcutKeys,
@@ -23,6 +25,7 @@ describe('systemSettings store', () => {
     autostart: false,
     minimizeToTray: false,
     minimizeOnCopy: false,
+    forceGifLoop: true,
     globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
     minimized: false
   };
@@ -49,6 +52,13 @@ describe('systemSettings store', () => {
       mockState.minimizeOnCopy = enable;
       return true;
     },
+    async isForceGifLoop() {
+      return mockState.forceGifLoop;
+    },
+    async setForceGifLoop(enable: boolean) {
+      mockState.forceGifLoop = enable;
+      return true;
+    },
     async minimizeWindow() {
       mockState.minimized = true;
       return true;
@@ -67,6 +77,7 @@ describe('systemSettings store', () => {
       autostart: false,
       minimizeToTray: false,
       minimizeOnCopy: false,
+      forceGifLoop: true,
       globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
       minimized: false
     };
@@ -74,6 +85,7 @@ describe('systemSettings store', () => {
     autostartEnabled.set(false);
     minimizeToTrayEnabled.set(false);
     minimizeOnCopyEnabled.set(false);
+    forceGifLoopEnabled.set(true);
     globalShortcut.set(DEFAULT_GLOBAL_SHORTCUT);
     systemSettingsLoading.set(false);
   });
@@ -82,6 +94,7 @@ describe('systemSettings store', () => {
     mockState.autostart = true;
     mockState.minimizeToTray = true;
     mockState.minimizeOnCopy = true;
+    mockState.forceGifLoop = false;
     mockState.globalShortcut = 'Alt+Shift+Period';
 
     const res = await loadSystemSettings(mockService);
@@ -89,24 +102,28 @@ describe('systemSettings store', () => {
       autostart: true,
       minimizeToTray: true,
       minimizeOnCopy: true,
+      forceGifLoop: false,
       globalShortcut: 'Alt+Shift+Period'
     });
 
     let autoVal: boolean | undefined;
     let trayVal: boolean | undefined;
     let copyVal: boolean | undefined;
+    let forceGifVal: boolean | undefined;
     let shortcutVal: string | undefined;
     let loadingVal: boolean | undefined;
 
     autostartEnabled.subscribe((v) => (autoVal = v))();
     minimizeToTrayEnabled.subscribe((v) => (trayVal = v))();
     minimizeOnCopyEnabled.subscribe((v) => (copyVal = v))();
+    forceGifLoopEnabled.subscribe((v) => (forceGifVal = v))();
     globalShortcut.subscribe((v) => (shortcutVal = v))();
     systemSettingsLoading.subscribe((v) => (loadingVal = v))();
 
     expect(autoVal).toBe(true);
     expect(trayVal).toBe(true);
     expect(copyVal).toBe(true);
+    expect(forceGifVal).toBe(false);
     expect(shortcutVal).toBe('Alt+Shift+Period');
     expect(loadingVal).toBe(false);
   });
@@ -132,6 +149,23 @@ describe('systemSettings store', () => {
     expect(mockState.minimizeOnCopy).toBe(false);
     minimizeOnCopyEnabled.subscribe((v) => (copyVal = v))();
     expect(copyVal).toBe(false);
+  });
+
+  it('toggles and updates forceGifLoop setting', async () => {
+    expect(mockState.forceGifLoop).toBe(true);
+    const success = await setForceGifLoopSetting(false, mockService);
+    expect(success).toBe(true);
+    expect(mockState.forceGifLoop).toBe(false);
+
+    let loopVal: boolean | undefined;
+    forceGifLoopEnabled.subscribe((v) => (loopVal = v))();
+    expect(loopVal).toBe(false);
+
+    // Re-enable
+    await setForceGifLoopSetting(true, mockService);
+    expect(mockState.forceGifLoop).toBe(true);
+    forceGifLoopEnabled.subscribe((v) => (loopVal = v))();
+    expect(loopVal).toBe(true);
   });
 
   it('toggles and updates autostart setting', async () => {
@@ -207,6 +241,12 @@ describe('systemSettings store', () => {
       async setMinimizeOnCopy() {
         throw new Error('cannot set minimize on copy');
       },
+      async isForceGifLoop() {
+        throw new Error('fail');
+      },
+      async setForceGifLoop() {
+        throw new Error('cannot set force gif loop');
+      },
       async minimizeWindow() {
         throw new Error('cannot minimize window');
       },
@@ -228,6 +268,9 @@ describe('systemSettings store', () => {
 
     const copySuccess = await setMinimizeOnCopySetting(true, failingService);
     expect(copySuccess).toBe(false);
+
+    const gifSuccess = await setForceGifLoopSetting(true, failingService);
+    expect(gifSuccess).toBe(false);
 
     const minSuccess = await triggerMinimizeWindow(failingService);
     expect(minSuccess).toBe(false);

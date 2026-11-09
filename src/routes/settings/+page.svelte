@@ -46,6 +46,7 @@
     autostartEnabled,
     minimizeToTrayEnabled,
     minimizeOnCopyEnabled,
+    forceGifLoopEnabled,
     globalShortcut,
     DEFAULT_GLOBAL_SHORTCUT,
     systemSettingsLoading,
@@ -53,6 +54,7 @@
     setAutostartSetting,
     setMinimizeToTraySetting,
     setMinimizeOnCopySetting,
+    setForceGifLoopSetting,
     setGlobalShortcutSetting,
     formatShortcutKeys
   } from '$lib/stores/systemSettings';
@@ -306,6 +308,29 @@
               class:active={$askBeforePaste}
               title={$askBeforePaste ? 'Desactivar confirmación al pegar' : 'Activar confirmación al pegar'}
               on:click={() => setAskBeforePaste(!$askBeforePaste)}
+            >
+              <span class="toggle-thumb"></span>
+            </button>
+          </div>
+
+          <div class="toggle-separator"></div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Forzar bucle infinito en GIFs al importar</span>
+              <p class="toggle-desc">
+                Normaliza los GIFs importados para que nunca se congelen tras reproducirse y mantengan animación continua en la app y al pegarlos.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={$forceGifLoopEnabled}
+              class="toggle-switch"
+              class:active={$forceGifLoopEnabled}
+              disabled={$systemSettingsLoading}
+              title={$forceGifLoopEnabled ? 'Desactivar bucle infinito automático' : 'Activar bucle infinito automático'}
+              on:click={() => setForceGifLoopSetting(!$forceGifLoopEnabled)}
             >
               <span class="toggle-thumb"></span>
             </button>

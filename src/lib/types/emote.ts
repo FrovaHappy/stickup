@@ -40,3 +40,9 @@ export interface ClipboardInspectResult {
   suggested_name?: string | null;
   format?: string | null;
 }
+
+export interface GifLoopStatus {
+  is_infinite: boolean;
+  loop_count?: number | null;
+  has_netscape_ext: boolean;
+}

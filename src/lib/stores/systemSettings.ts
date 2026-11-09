@@ -7,6 +7,7 @@ export const DEFAULT_GLOBAL_SHORTCUT = 'Super+Control+Period';
 export const autostartEnabled = writable<boolean>(false);
 export const minimizeToTrayEnabled = writable<boolean>(false);
 export const minimizeOnCopyEnabled = writable<boolean>(false);
+export const forceGifLoopEnabled = writable<boolean>(true);
 export const globalShortcut = writable<string>(DEFAULT_GLOBAL_SHORTCUT);
 export const systemSettingsLoading = writable<boolean>(true);
 
@@ -44,25 +45,29 @@ export async function loadSystemSettings(
   autostart: boolean;
   minimizeToTray: boolean;
   minimizeOnCopy: boolean;
+  forceGifLoop: boolean;
   globalShortcut: string;
 }> {
   systemSettingsLoading.set(true);
   try {
-    const [auto, tray, onCopy, shortcut] = await Promise.all([
+    const [auto, tray, onCopy, forceLoop, shortcut] = await Promise.all([
       service.isAutostart(),
       service.isMinimizeToTray(),
       service.isMinimizeOnCopy(),
+      service.isForceGifLoop(),
       service.getGlobalShortcut()
     ]);
     autostartEnabled.set(auto);
     minimizeToTrayEnabled.set(tray);
     minimizeOnCopyEnabled.set(onCopy);
+    forceGifLoopEnabled.set(forceLoop);
     const resolvedShortcut = shortcut || DEFAULT_GLOBAL_SHORTCUT;
     globalShortcut.set(resolvedShortcut);
     return {
       autostart: auto,
       minimizeToTray: tray,
       minimizeOnCopy: onCopy,
+      forceGifLoop: forceLoop,
       globalShortcut: resolvedShortcut
     };
   } catch (e) {
@@ -71,6 +76,7 @@ export async function loadSystemSettings(
       autostart: false,
       minimizeToTray: false,
       minimizeOnCopy: false,
+      forceGifLoop: true,
       globalShortcut: DEFAULT_GLOBAL_SHORTCUT
     };
   } finally {
@@ -134,6 +140,26 @@ export async function setMinimizeOnCopySetting(
   } catch (e) {
     console.error('Error modificando minimizar al copiar:', e);
     toast.error('No se pudo guardar la preferencia de minimizar al copiar');
+    return false;
+  }
+}
+
+export async function setForceGifLoopSetting(
+  enable: boolean,
+  service: SystemService = activeService
+): Promise<boolean> {
+  try {
+    await service.setForceGifLoop(enable);
+    forceGifLoopEnabled.set(enable);
+    if (enable) {
+      toast.success('Bucle infinito automático en GIFs activado');
+    } else {
+      toast.info('Bucle infinito automático en GIFs desactivado (respetará repeticiones finitas)');
+    }
+    return true;
+  } catch (e) {
+    console.error('Error modificando bucle de GIFs:', e);
+    toast.error('No se pudo modificar la preferencia de bucle de GIFs');
     return false;
   }
 }

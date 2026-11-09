@@ -39,15 +39,21 @@ Dentro de `changelogs/unreleased.md`, clasificar cada cambio bajo una de las sig
 - `### Fixed`: Corrección de errores, fallos de renderizado o bugs de plataforma.
 - `### Security`: Mejoras de seguridad o resolución de vulnerabilidades.
 
-### Estilo de Redacción
+### Estilo de Redacción (Descripciones Cortas y Concisas)
 
-- Usar un título breve en negrita con el componente o módulo afectado, seguido de dos puntos y una descripción concisa.
-- Ejemplo:
-
-  ```markdown
-  ### Added
-  - **Modal flotante de confirmación (`PasteConfirmPopup`)**: Interfaz emergente para previsualizar y asignar tags al pegar desde el portapapeles.
-  ```
+- **Regla de Brevedad (Máximo 1 línea por ítem)**: Las entradas deben ser directas, compactas y sin explicaciones técnicas redundantes ni justificaciones extensas.
+- **Formato**: Usar un título breve en negrita con el componente o funcionalidad afectada, seguido de dos puntos y una descripción concisa en una sola frase.
+- **Ejemplo**:
+  - ✅ Bueno:
+    ```markdown
+    ### Added
+    - **Control de bucle en GIFs**: Ajuste global y opción individual para alternar entre bucle infinito o frenar.
+    - **Modal de confirmación (`PasteConfirmPopup`)**: Previsualización y asignación de tags al pegar desde el portapapeles.
+    ```
+  - ❌ Evitar (demasiado largo):
+    ```markdown
+    - **Control global de bucle en GIFs**: Opción en Configuración para forzar bucle infinito en GIFs importados, garantizando animación continua tanto en la app como al pegarlos en plataformas externas como Discord o navegadores.
+    ```
 
 ---
 
