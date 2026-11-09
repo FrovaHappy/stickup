@@ -140,6 +140,14 @@ jobs:
             }
           ' "$NEW_VERSION"
 
+          if [ "${{ github.event.inputs.bump_type }}" != "dev" ] && [ -f "changelogs/unreleased.md" ]; then
+            RELEASE_DATE=$(date +%Y-%m-%d)
+            NEW_CHANGELOG="changelogs/${NEW_TAG}.md"
+            sed -e "1s/# Unreleased/# Release ${NEW_TAG} (${RELEASE_DATE})/" changelogs/unreleased.md > "$NEW_CHANGELOG"
+            printf "# Unreleased\n\n### Added\n- \n\n### Changed\n- \n\n### Fixed\n- \n" > changelogs/unreleased.md
+            git add changelogs/
+          fi
+
           git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore(release): $NEW_VERSION"
           git tag -a "$NEW_TAG" -m "chore(release): $NEW_VERSION"
@@ -172,12 +180,19 @@ jobs:
             EXTRA_ARGS="--prerelease"
           fi
 
+          NOTES_ARGS="--generate-notes"
+          if [ -f "changelogs/${{ steps.version.outputs.tag }}.md" ]; then
+            NOTES_ARGS="--notes-file changelogs/${{ steps.version.outputs.tag }}.md"
+          elif [ -f "changelogs/unreleased.md" ]; then
+            NOTES_ARGS="--notes-file changelogs/unreleased.md"
+          fi
+
           gh release create "${{ steps.version.outputs.tag }}" \
             release-assets/installers/* \
             release-assets/binaries/stickup-linux-x64 \
             release-assets/binaries/stickup-windows-x64.exe \
             $EXTRA_ARGS \
             --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes
+            $NOTES_ARGS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

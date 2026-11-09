@@ -37,6 +37,18 @@ Todo cambio en **StickUp** se rige por **ODD** (ver detalle completo en [.agents
 
 ## 3. Estructura de Ficheros Estándar
 
+### Raíz del Proyecto
+
+```text
+stickup/
+├── changelogs/          # Version logs modulares independientes
+│   ├── unreleased.md    # Cambios en desarrollo (mantenido al día)
+│   └── v[version].md    # Registros congelados por versión para el CI
+├── src/                 # Código fuente frontend (SvelteKit)
+├── src-tauri/           # Backend nativo (Rust / Tauri)
+└── .agents/             # Metodología ODD, tareas y skills de agentes
+```
+
 ### Backend (`src-tauri/src/`)
 
 ```text
@@ -77,9 +89,12 @@ src/
 
 ## 4. Checklist de Verificación (Fase `Verify` de ODD)
 
-1. Verificar que compile sin error la aplicacion:
+1. Verificar que compile sin error la aplicación:
    `pnpm run prebuild`
-2. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `odd/tasks/{feature-slug}.md` si la tarea fue sustancial.
+2. Confirmar que no existan warnings de código muerto (`unused_imports`, `dead_code`) en Rust y actualizar `.agents/odd/tasks/{feature-slug}.md` si la tarea fue sustancial.
+3. **Mantener al día el Version Log**:
+   - Documentar todo cambio relevante (feature, refactor, fix) en [changelogs/unreleased.md](file:///c:/Users/happy/repos/stickup/changelogs/unreleased.md) bajo la categoría correspondiente (`Added`, `Changed`, `Fixed`, etc.), siguiendo la skill [.agents/skills/release-notes/SKILL.md](file:///c:/Users/happy/repos/stickup/.agents/skills/release-notes/SKILL.md) y las especificaciones de **Keep a Changelog** y **Semantic Versioning**.
+   - El CI consumirá este archivo para congelarlo en `changelogs/v{VERSION}.md` e inyectarlo en GitHub Releases sin necesidad de resúmenes monolíticos.
 
 ---
 
@@ -106,4 +121,3 @@ La interfaz se rige por un tema oscuro (`#1a1a1c` / `#1c1c1f`) con **énfasis vi
 1. **Sin fondos pesados:** No usar fondos sólidos en tarjetas o paneles; usar `background: transparent;` con borde `1px solid var(--color-border-subtle);`.
 2. **Focus accesible:** Todo foco por teclado (`:focus-visible`) usa `outline: 2px solid var(--color-orange-primary); outline-offset: 2px;`.
 3. **Zero Hardcoded Colors:** Usar siempre las variables de `global.css` en lugar de colores hexadecimales dispersos.
-
