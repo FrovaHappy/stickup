@@ -3,7 +3,9 @@ use crate::db::{
     self, clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
     set_active_db_dir, upgrade_legacy_db_in_dir, DB_FILE_NAME,
 };
-use crate::models::{BackupInfo, BackupResult, Emote, RestoreResult, ResyncStats};
+use crate::models::{
+    BackupInfo, BackupResult, ClipboardInspectResult, Emote, RestoreResult, ResyncStats,
+};
 use image::codecs::gif::{GifDecoder, GifEncoder, Repeat};
 use image::codecs::webp::WebPDecoder;
 use image::{AnimationDecoder, Delay, Frame, GenericImageView, ImageDecoder, ImageFormat};
@@ -729,6 +731,27 @@ fn import_single_file(
         return Ok(None);
     }
 
+    // Capa de verificación para evitar duplicar un archivo que ya pertenece a la biblioteca
+    let norm_src = normalize_path(src);
+    let existing_name: Option<String> = conn
+        .query_row(
+            "SELECT name FROM emotes WHERE path = ?1 OR path = ?2",
+            params![norm_src, src.to_string_lossy().to_string()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(name) = existing_name {
+        return Err(format!("El emote '{}' ya existe en tu colección", name));
+    }
+
+    if let (Ok(can_src), Ok(can_dir)) = (src.canonicalize(), abs_dir.canonicalize()) {
+        if can_src.starts_with(&can_dir) {
+            return Err("El emote ya existe en tu colección".to_string());
+        }
+    }
+
     // Detectar si es un GIF animado (>1 fotograma) o WebP animado para conservar su secuencia como GIF
     let mut is_animated_gif = false;
     let mut gif_dimensions: Option<(u32, u32)> = None;
@@ -1028,6 +1051,167 @@ pub fn import_from_clipboard(name: Option<String>) -> Result<Vec<Emote>, String>
             let emote = import_from_url(url, custom_name)?;
             Ok(vec![emote])
         }
+    }
+}
+
+pub fn encode_base64(bytes: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+
+        out.push(CHARS[b0 >> 2] as char);
+        out.push(CHARS[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
+        if chunk.len() > 1 {
+            out.push(CHARS[((b1 & 0x0f) << 2) | (b2 >> 6)] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(CHARS[b2 & 0x3f] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
+    let payload = match clipboard::read_clipboard_payload() {
+        Ok(p) => p,
+        Err(_) => return Ok(ClipboardInspectResult::default()),
+    };
+
+    match payload {
+        ClipboardPayload::LocalPaths(paths) => {
+            let conn = match ensure_db() {
+                Ok(c) => c,
+                Err(_) => return Ok(ClipboardInspectResult::default()),
+            };
+            let dir = get_active_emotes_dir(&conn);
+            let abs_dir = dir.canonicalize().unwrap_or(dir);
+
+            for p in paths {
+                if !p.exists() || !p.is_file() {
+                    continue;
+                }
+                let ext = p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+                    continue;
+                }
+
+                // Verificar si ya existe en la base de datos o en la carpeta de emotes
+                let norm_p = normalize_path(&p);
+                let existing_name: Option<String> = conn
+                    .query_row(
+                        "SELECT name FROM emotes WHERE path = ?1 OR path = ?2",
+                        params![norm_p, p.to_string_lossy().to_string()],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+
+                let is_in_active_dir = if let (Ok(can_p), Ok(can_dir)) =
+                    (p.canonicalize(), abs_dir.canonicalize())
+                {
+                    can_p.starts_with(&can_dir)
+                } else {
+                    false
+                };
+
+                if existing_name.is_some() || is_in_active_dir {
+                    let stem = extract_stem(&p);
+                    return Ok(ClipboardInspectResult {
+                        has_image: true,
+                        is_duplicate: true,
+                        duplicate_name: existing_name.or_else(|| Some(to_pascal_case(&stem))),
+                        preview_data_url: None,
+                        suggested_name: None,
+                        format: Some(ext),
+                    });
+                }
+
+                // No es duplicado: generar preview data URL
+                if let Ok(bytes) = fs::read(&p) {
+                    let mime = match ext.as_str() {
+                        "png" => "image/png",
+                        "gif" => "image/gif",
+                        "webp" => "image/webp",
+                        _ => "image/jpeg",
+                    };
+                    let b64 = encode_base64(&bytes);
+                    let preview = format!("data:{};base64,{}", mime, b64);
+                    let stem = extract_stem(&p);
+                    return Ok(ClipboardInspectResult {
+                        has_image: true,
+                        is_duplicate: false,
+                        duplicate_name: None,
+                        preview_data_url: Some(preview),
+                        suggested_name: Some(to_pascal_case(&stem)),
+                        format: Some(ext),
+                    });
+                }
+            }
+            Ok(ClipboardInspectResult::default())
+        }
+        ClipboardPayload::RawImageBytes(bytes) => {
+            let guessed = match image::guess_format(&bytes) {
+                Ok(g) => g,
+                Err(_) => return Ok(ClipboardInspectResult::default()),
+            };
+            let (mime, fmt_str) = match guessed {
+                ImageFormat::Png => ("image/png", "png"),
+                ImageFormat::Gif => ("image/gif", "gif"),
+                ImageFormat::WebP => ("image/webp", "webp"),
+                ImageFormat::Jpeg => ("image/jpeg", "jpg"),
+                _ => return Ok(ClipboardInspectResult::default()),
+            };
+            let b64 = encode_base64(&bytes);
+            let preview = format!("data:{};base64,{}", mime, b64);
+            Ok(ClipboardInspectResult {
+                has_image: true,
+                is_duplicate: false,
+                duplicate_name: None,
+                preview_data_url: Some(preview),
+                suggested_name: Some("Clipboard".to_string()),
+                format: Some(fmt_str.to_string()),
+            })
+        }
+        #[cfg(windows)]
+        ClipboardPayload::RgbaImage {
+            rgba,
+            width,
+            height,
+        } => {
+            let img_buf = match image::RgbaImage::from_raw(width, height, rgba) {
+                Some(b) => b,
+                None => return Ok(ClipboardInspectResult::default()),
+            };
+            let dyn_img = image::DynamicImage::ImageRgba8(img_buf);
+            let mut buf = Cursor::new(Vec::new());
+            if dyn_img.write_to(&mut buf, ImageFormat::WebP).is_err() {
+                return Ok(ClipboardInspectResult::default());
+            }
+            let bytes = buf.into_inner();
+            let b64 = encode_base64(&bytes);
+            let preview = format!("data:image/webp;base64,{}", b64);
+            Ok(ClipboardInspectResult {
+                has_image: true,
+                is_duplicate: false,
+                duplicate_name: None,
+                preview_data_url: Some(preview),
+                suggested_name: Some("Clipboard".to_string()),
+                format: Some("webp".to_string()),
+            })
+        }
+        ClipboardPayload::TextUrl(_) => Ok(ClipboardInspectResult::default()),
     }
 }
 
@@ -1945,5 +2129,56 @@ mod tests {
         assert_eq!(decode_base64("YWJj"), Some(b"abc".to_vec()));
         assert_eq!(decode_base64("SGVsbG8gV29ybGQh"), Some(b"Hello World!".to_vec()));
         assert!(decode_base64("invalid!chars").is_none());
+    }
+
+    #[test]
+    fn test_encode_base64() {
+        assert_eq!(encode_base64(b""), "");
+        assert_eq!(encode_base64(b"a"), "YQ==");
+        assert_eq!(encode_base64(b"ab"), "YWI=");
+        assert_eq!(encode_base64(b"abc"), "YWJj");
+        assert_eq!(encode_base64(b"Hello World!"), "SGVsbG8gV29ybGQh");
+    }
+
+    #[test]
+    fn test_import_single_file_prevents_duplicate_in_same_db() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE emotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                tag TEXT,
+                path TEXT NOT NULL UNIQUE,
+                original_width INTEGER NOT NULL,
+                original_height INTEGER NOT NULL,
+                format TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        let tmp_dir = std::env::temp_dir().join(format!("stickup_test_dup_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let emote_file = tmp_dir.join("test_emote.png");
+        fs::write(&emote_file, b"test image data").unwrap();
+
+        let norm_path = normalize_path(&emote_file);
+        conn.execute(
+            "INSERT INTO emotes (name, path, original_width, original_height, format, created_at)
+             VALUES ('TestEmote', ?1, 100, 100, 'png', '2026-11-09T00:00:00Z')",
+            params![norm_path],
+        )
+        .unwrap();
+
+        let target_dir = tmp_dir.join("emotes");
+        fs::create_dir_all(&target_dir).unwrap();
+
+        let res = import_single_file(&conn, &target_dir, &emote_file);
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(err.contains("ya existe"));
+
+        let _ = fs::remove_dir_all(&tmp_dir);
     }
 }

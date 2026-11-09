@@ -4,7 +4,11 @@ import {
   setGridSize,
   sortOption,
   setSortOption,
-  sortEmotesList
+  sortEmotesList,
+  askBeforePaste,
+  setAskBeforePaste,
+  lastCopiedEmote,
+  recordCopiedEmote
 } from './preferences';
 import type { Emote } from '$lib/types/emote';
 
@@ -83,6 +87,33 @@ describe('preferences store and sorting helpers', () => {
 
     const sorted = sortEmotesList([e1, e2, e3], 'copies-desc');
     expect(sorted.map((e) => e.id)).toEqual([2, 3, 1]);
+  });
+
+  it('manages askBeforePaste preference and persistence', () => {
+    let current: boolean | undefined;
+    const unsub = askBeforePaste.subscribe((v) => (current = v));
+    expect(current).toBe(true);
+
+    setAskBeforePaste(false);
+    expect(current).toBe(false);
+
+    setAskBeforePaste(true);
+    expect(current).toBe(true);
+    unsub();
+  });
+
+  it('records last copied emote accurately', () => {
+    const emote = createDummyEmote({ id: 42, name: 'PepeJam', path: '/emotes/pepe.webp' });
+    recordCopiedEmote(emote);
+
+    let recorded: any;
+    const unsub = lastCopiedEmote.subscribe((v) => (recorded = v));
+    expect(recorded).not.toBeNull();
+    expect(recorded?.id).toBe(42);
+    expect(recorded?.name).toBe('PepeJam');
+    expect(recorded?.path).toBe('/emotes/pepe.webp');
+    expect(typeof recorded?.timestamp).toBe('number');
+    unsub();
   });
 });
 

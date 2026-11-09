@@ -73,3 +73,13 @@ pub struct BatchImportResult {
     pub failed_count: usize,
     pub errors: Vec<String>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ClipboardInspectResult {
+    pub has_image: bool,
+    pub is_duplicate: bool,
+    pub duplicate_name: Option<String>,
+    pub preview_data_url: Option<String>,
+    pub suggested_name: Option<String>,
+    pub format: Option<String>,
+}

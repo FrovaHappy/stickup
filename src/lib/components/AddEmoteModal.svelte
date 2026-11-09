@@ -6,8 +6,10 @@
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
+  import { askBeforePaste, lastCopiedEmote } from "$lib/stores/preferences";
   import { toPascalCase } from "$lib/utils/format";
   import type { Emote } from "$lib/types/emote";
+  import PasteConfirmPopup from "./PasteConfirmPopup.svelte";
   import {
     Alert,
     Button,
@@ -29,6 +31,33 @@
   let isError = false;
   let lastPasteTimestamp = 0;
   const PASTE_COOLDOWN_MS = 1200;
+
+  let showPasteConfirm = false;
+  let popupPreviewUrl = "";
+  let popupSuggestedName = "";
+  let popupIsBusy = false;
+  let pendingSaveAction: (() => Promise<void>) | null = null;
+
+  async function handleConfirmSave(dontAskAgain: boolean) {
+    if (popupIsBusy || !pendingSaveAction) return;
+    popupIsBusy = true;
+    try {
+      await pendingSaveAction();
+      showPasteConfirm = false;
+      pendingSaveAction = null;
+    } catch (err: any) {
+      toast.error(`Error al guardar: ${err?.message || err}`);
+    } finally {
+      popupIsBusy = false;
+    }
+  }
+
+  function handleCancelSave() {
+    showPasteConfirm = false;
+    pendingSaveAction = null;
+    popupPreviewUrl = "";
+    popupSuggestedName = "";
+  }
 
   let unlistenTauriDrop: (() => void) | null = null;
 
@@ -149,14 +178,69 @@
   }
 
   async function handlePasteClipboard() {
-    if (isBusy) return;
+    if (isBusy || popupIsBusy) return;
+
+    try {
+      // 1. Capa de verificación con inspectClipboard
+      const inspect = await api.inspectClipboard();
+
+      if (inspect.is_duplicate) {
+        const name = inspect.duplicate_name || "seleccionado";
+        toast.info(`El emote "${name}" ya existe en tu colección`);
+        return;
+      }
+
+      if (
+        $lastCopiedEmote &&
+        inspect.suggested_name &&
+        inspect.suggested_name.toLowerCase() === $lastCopiedEmote.name.toLowerCase()
+      ) {
+        toast.info(`El emote "${$lastCopiedEmote.name}" ya existe en tu colección`);
+        return;
+      }
+
+      if (!inspect.has_image || !inspect.preview_data_url) {
+        showFeedback("No se encontraron imágenes compatibles (.png, .jpg, .webp, .gif).", true);
+        return;
+      }
+
+      const normalizedName = customName.trim()
+        ? toPascalCase(customName)
+        : inspect.suggested_name || "Clipboard";
+
+      // Si askBeforePaste está desactivado: guardar directamente
+      if (!$askBeforePaste) {
+        await executeDirectClipboardImport(normalizedName);
+        return;
+      }
+
+      // Si askBeforePaste está activado: mostrar modal en la derecha inferior
+      popupPreviewUrl = inspect.preview_data_url;
+      popupSuggestedName = normalizedName;
+      pendingSaveAction = async () => {
+        await executeDirectClipboardImport(normalizedName);
+      };
+      showPasteConfirm = true;
+    } catch (err: any) {
+      if (typeof err === "string" && err.includes("ya está en curso")) {
+        return;
+      }
+      const msg = err?.message || String(err);
+      if (msg.includes("ya existe")) {
+        toast.info(msg);
+      } else {
+        showFeedback(`Error: ${msg}`, true);
+      }
+    }
+  }
+
+  async function executeDirectClipboardImport(nameToUse?: string) {
     isBusy = true;
-    statusMsg = "Identificando contenido del portapapeles...";
+    statusMsg = "Guardando emote...";
     isError = false;
 
     try {
-      const normalizedName = customName.trim() ? toPascalCase(customName) : undefined;
-      const result = await api.importFromClipboard(normalizedName);
+      const result = await api.importFromClipboard(nameToUse);
       customName = "";
       await loadEmotes();
 
@@ -177,17 +261,14 @@
         showFeedback(
           `✓ ¡${list.length} emotes agregados exitosamente!`,
         );
-      } else {
-        showFeedback(
-          "No se encontraron imágenes compatibles (.png, .jpg, .webp, .gif).",
-          true,
-        );
       }
     } catch (err: any) {
-      if (typeof err === "string" && err.includes("ya está en curso")) {
-        return;
+      const msg = err?.message || String(err);
+      if (msg.includes("ya existe")) {
+        toast.info(msg);
+      } else {
+        showFeedback(`Error: ${msg}`, true);
       }
-      showFeedback(`Error: ${err?.message || err}`, true);
     } finally {
       setTimeout(() => {
         isBusy = false;
@@ -330,33 +411,52 @@
       }
 
       if (validFiles.length > 0) {
-        isBusy = true;
-        statusMsg = "Importando imagen pegada...";
-        isError = false;
-        try {
-          let count = 0;
-          for (const file of validFiles) {
-            const buf = await file.arrayBuffer();
-            const bytes = Array.from(new Uint8Array(buf));
-            const stem = file.name
-              ? toPascalCase(file.name.replace(/\.[^/.]+$/, ""))
-              : "Clipboard";
-            await api.importRawBytes(bytes, stem || "Clipboard");
-            count++;
-          }
-          await loadEmotes();
-          showFeedback(
-            `✓ ¡${count} ${count === 1 ? "emote agregado" : "emotes agregados"} desde el portapapeles!`,
-          );
+        const file = validFiles[0];
+        const stem = file.name
+          ? toPascalCase(file.name.replace(/\.[^/.]+$/, ""))
+          : "Clipboard";
+
+        // Verificación de duplicado
+        if (
+          $lastCopiedEmote &&
+          stem.toLowerCase() === $lastCopiedEmote.name.toLowerCase()
+        ) {
+          toast.info(`El emote "${$lastCopiedEmote.name}" ya existe en tu colección`);
           return;
-        } catch (err: any) {
-          showFeedback(`Error: ${err?.message || err}`, true);
-          return;
-        } finally {
-          setTimeout(() => {
-            isBusy = false;
-          }, 400);
         }
+
+        const buf = await file.arrayBuffer();
+        const bytes = Array.from(new Uint8Array(buf));
+
+        if (!$askBeforePaste) {
+          isBusy = true;
+          statusMsg = "Importando imagen pegada...";
+          isError = false;
+          try {
+            await api.importRawBytes(bytes, stem || "Clipboard");
+            await loadEmotes();
+            showFeedback(`✓ ¡Emote "${stem}" agregado exitosamente!`);
+            return;
+          } catch (err: any) {
+            showFeedback(`Error: ${err?.message || err}`, true);
+            return;
+          } finally {
+            setTimeout(() => {
+              isBusy = false;
+            }, 400);
+          }
+        }
+
+        // Si askBeforePaste está activado:
+        popupPreviewUrl = URL.createObjectURL(file);
+        popupSuggestedName = stem;
+        pendingSaveAction = async () => {
+          await api.importRawBytes(bytes, stem || "Clipboard");
+          await loadEmotes();
+          showFeedback(`✓ ¡Emote "${stem}" agregado exitosamente!`);
+        };
+        showPasteConfirm = true;
+        return;
       } else if (hadUnsupported) {
         showFeedback(
           "El archivo pegado no es compatible. Solo se admiten imágenes PNG, JPG, JPEG, GIF o WebP.",
@@ -452,6 +552,15 @@
     {/if}
   </Dropzone>
 </Modal>
+
+<PasteConfirmPopup
+  open={showPasteConfirm}
+  previewUrl={popupPreviewUrl}
+  name={popupSuggestedName}
+  isBusy={popupIsBusy}
+  onSave={handleConfirmSave}
+  onCancel={handleCancelSave}
+/>
 
 <style>
   .primary-actions {

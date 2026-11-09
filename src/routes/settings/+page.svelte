@@ -23,6 +23,7 @@
     defaultResolution,
     setDefaultResolution
   } from '$lib/stores/sizes';
+  import { askBeforePaste, setAskBeforePaste } from '$lib/stores/preferences';
   import { toast } from '$lib/stores/toast';
   import {
     autostartEnabled,
@@ -257,6 +258,28 @@
               disabled={$systemSettingsLoading}
               title={$minimizeOnCopyEnabled ? 'Desactivar minimizar al copiar' : 'Activar minimizar al copiar'}
               on:click={() => setMinimizeOnCopySetting(!$minimizeOnCopyEnabled)}
+            >
+              <span class="toggle-thumb"></span>
+            </button>
+          </div>
+
+          <div class="toggle-separator"></div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Confirmar al pegar imagen</span>
+              <p class="toggle-desc">
+                Muestra una ventana en la esquina inferior derecha para previsualizar y confirmar antes de guardar al presionar Ctrl+V.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={$askBeforePaste}
+              class="toggle-switch"
+              class:active={$askBeforePaste}
+              title={$askBeforePaste ? 'Desactivar confirmación al pegar' : 'Activar confirmación al pegar'}
+              on:click={() => setAskBeforePaste(!$askBeforePaste)}
             >
               <span class="toggle-thumb"></span>
             </button>

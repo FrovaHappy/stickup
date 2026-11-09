@@ -16,6 +16,7 @@
     removeCustomSize
   } from '$lib/stores/sizes';
   import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
+  import { recordCopiedEmote } from '$lib/stores/preferences';
   import { toast } from '$lib/stores/toast';
   import {
     SIZE_PRESETS,
@@ -251,6 +252,7 @@
 
       copyCount += 1;
       emote.copy_count = copyCount;
+      recordCopiedEmote(emote);
       await loadEmotes();
 
       if (resizingToastId) {

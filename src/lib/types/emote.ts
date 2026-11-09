@@ -31,3 +31,12 @@ export interface ResyncStats {
   bytes_after: number;
   saved_bytes: number;
 }
+
+export interface ClipboardInspectResult {
+  has_image: boolean;
+  is_duplicate: boolean;
+  duplicate_name?: string | null;
+  preview_data_url?: string | null;
+  suggested_name?: string | null;
+  format?: string | null;
+}

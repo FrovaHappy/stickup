@@ -11,7 +11,7 @@
   import { customSizes, defaultResolution, resolveDefaultDimensions } from '$lib/stores/sizes';
   import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
   import { toast } from '$lib/stores/toast';
-  import { sortOption, sortEmotesList } from '$lib/stores/preferences';
+  import { sortOption, sortEmotesList, recordCopiedEmote } from '$lib/stores/preferences';
   import { toPascalCase, isAnimatedEmote } from '$lib/utils/format';
 
   let selected: Emote | null = null;
@@ -52,6 +52,7 @@
         resizingToastId = null;
       }
       toast.success(`✓ ¡Emote "${emote.name}" copiado (${resolved.label})!`);
+      recordCopiedEmote(emote);
       await loadEmotes();
       if ($minimizeOnCopyEnabled) {
         await api.minimizeWindow();
@@ -90,6 +91,7 @@
         resizingToastId = null;
       }
       toast.success(`✓ ¡"${emote.name}" copiado (${sizeLabel})!`);
+      recordCopiedEmote(emote);
       await loadEmotes();
       if ($minimizeOnCopyEnabled) {
         await api.minimizeWindow();

@@ -164,6 +164,7 @@ pub fn run() {
             commands::import_raw_bytes,
             commands::import_from_url,
             commands::import_from_clipboard,
+            commands::inspect_clipboard,
             commands::get_storage_path,
             commands::set_storage_path,
             commands::delete_emote,

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Emote, ResyncStats } from '$lib/types/emote';
+import type { ClipboardInspectResult, Emote, ResyncStats } from '$lib/types/emote';
 import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
 import type { ScannedImage, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
 
@@ -15,6 +15,7 @@ export const api = {
     invoke<Emote>('import_from_url', { url, name: name?.trim() || null }),
   importFromClipboard: (name?: string) =>
     invoke<Emote | Emote[]>('import_from_clipboard', { name: name?.trim() || null }),
+  inspectClipboard: () => invoke<ClipboardInspectResult>('inspect_clipboard'),
   deleteEmote: (id: number) => invoke<boolean>('delete_emote', { id }),
   updateTag: (id: number, name: string, tag: string) =>
     invoke<string>('update_tag', { id, name, tag }),

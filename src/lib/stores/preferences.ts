@@ -4,6 +4,7 @@ import type { GridSize, SortOption, SortOptionItem } from '$lib/types/preference
 
 const GRID_SIZE_KEY = 'stickup_pref_grid_size';
 const SORT_OPTION_KEY = 'stickup_pref_sort_option';
+const ASK_BEFORE_PASTE_KEY = 'stickup_pref_ask_before_paste';
 
 export const SORT_OPTIONS: SortOptionItem[] = [
   { id: 'date-desc', label: 'Más recientes' },
@@ -45,8 +46,50 @@ function getStoredSortOption(): SortOption {
   return 'date-desc';
 }
 
+function getStoredAskBeforePaste(): boolean {
+  if (typeof localStorage === 'undefined') return true;
+  try {
+    const val = localStorage.getItem(ASK_BEFORE_PASTE_KEY);
+    if (val !== null) {
+      return val === 'true';
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return true;
+}
+
+export interface CopiedEmoteRecord {
+  id: number;
+  name: string;
+  path: string;
+  timestamp: number;
+}
+
 export const gridSize = writable<GridSize>(getStoredGridSize());
 export const sortOption = writable<SortOption>(getStoredSortOption());
+export const askBeforePaste = writable<boolean>(getStoredAskBeforePaste());
+export const lastCopiedEmote = writable<CopiedEmoteRecord | null>(null);
+
+export function recordCopiedEmote(emote: Emote) {
+  lastCopiedEmote.set({
+    id: emote.id,
+    name: emote.name,
+    path: emote.path,
+    timestamp: Date.now()
+  });
+}
+
+export function setAskBeforePaste(enabled: boolean) {
+  askBeforePaste.set(enabled);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(ASK_BEFORE_PASTE_KEY, String(enabled));
+    } catch {
+      // Ignore
+    }
+  }
+}
 
 export function setGridSize(size: GridSize) {
   gridSize.set(size);
