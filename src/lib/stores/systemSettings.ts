@@ -6,6 +6,7 @@ export const DEFAULT_GLOBAL_SHORTCUT = 'Super+Control+Period';
 
 export const autostartEnabled = writable<boolean>(false);
 export const minimizeToTrayEnabled = writable<boolean>(false);
+export const minimizeOnCopyEnabled = writable<boolean>(false);
 export const globalShortcut = writable<string>(DEFAULT_GLOBAL_SHORTCUT);
 export const systemSettingsLoading = writable<boolean>(true);
 
@@ -39,22 +40,39 @@ export function resetSystemService() {
 
 export async function loadSystemSettings(
   service: SystemService = activeService
-): Promise<{ autostart: boolean; minimizeToTray: boolean; globalShortcut: string }> {
+): Promise<{
+  autostart: boolean;
+  minimizeToTray: boolean;
+  minimizeOnCopy: boolean;
+  globalShortcut: string;
+}> {
   systemSettingsLoading.set(true);
   try {
-    const [auto, tray, shortcut] = await Promise.all([
+    const [auto, tray, onCopy, shortcut] = await Promise.all([
       service.isAutostart(),
       service.isMinimizeToTray(),
+      service.isMinimizeOnCopy(),
       service.getGlobalShortcut()
     ]);
     autostartEnabled.set(auto);
     minimizeToTrayEnabled.set(tray);
+    minimizeOnCopyEnabled.set(onCopy);
     const resolvedShortcut = shortcut || DEFAULT_GLOBAL_SHORTCUT;
     globalShortcut.set(resolvedShortcut);
-    return { autostart: auto, minimizeToTray: tray, globalShortcut: resolvedShortcut };
+    return {
+      autostart: auto,
+      minimizeToTray: tray,
+      minimizeOnCopy: onCopy,
+      globalShortcut: resolvedShortcut
+    };
   } catch (e) {
     console.error('Error cargando configuración del sistema:', e);
-    return { autostart: false, minimizeToTray: false, globalShortcut: DEFAULT_GLOBAL_SHORTCUT };
+    return {
+      autostart: false,
+      minimizeToTray: false,
+      minimizeOnCopy: false,
+      globalShortcut: DEFAULT_GLOBAL_SHORTCUT
+    };
   } finally {
     systemSettingsLoading.set(false);
   }
@@ -96,6 +114,37 @@ export async function setMinimizeToTraySetting(
   } catch (e) {
     console.error('Error modificando minimizar a bandeja:', e);
     toast.error('No se pudo guardar la preferencia de bandeja');
+    return false;
+  }
+}
+
+export async function setMinimizeOnCopySetting(
+  enable: boolean,
+  service: SystemService = activeService
+): Promise<boolean> {
+  try {
+    await service.setMinimizeOnCopy(enable);
+    minimizeOnCopyEnabled.set(enable);
+    if (enable) {
+      toast.success('StickUp se minimizará automáticamente tras copiar un emote');
+    } else {
+      toast.info('Minimizar al copiar desactivado');
+    }
+    return true;
+  } catch (e) {
+    console.error('Error modificando minimizar al copiar:', e);
+    toast.error('No se pudo guardar la preferencia de minimizar al copiar');
+    return false;
+  }
+}
+
+export async function triggerMinimizeWindow(
+  service: SystemService = activeService
+): Promise<boolean> {
+  try {
+    return await service.minimizeWindow();
+  } catch (e) {
+    console.error('Error minimizando ventana:', e);
     return false;
   }
 }

@@ -40,6 +40,10 @@ export const api = {
   getMinimizeToTray: () => invoke<boolean>('get_minimize_to_tray'),
   setMinimizeToTray: (enabled: boolean) =>
     invoke<void>('set_minimize_to_tray', { enabled }),
+  getMinimizeOnCopy: () => invoke<boolean>('get_minimize_on_copy'),
+  setMinimizeOnCopy: (enabled: boolean) =>
+    invoke<void>('set_minimize_on_copy', { enabled }),
+  minimizeWindow: () => invoke<void>('minimize_window'),
   getGlobalShortcut: () => invoke<string>('get_global_shortcut'),
   setGlobalShortcut: (shortcut: string) =>
     invoke<string>('set_global_shortcut', { shortcut }),

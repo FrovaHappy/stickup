@@ -2,6 +2,7 @@ import { writable, derived } from 'svelte/store';
 import type { SizePreset } from '$lib/types/emote';
 
 export const CUSTOM_SIZES_STORAGE_KEY = 'stickup_custom_sizes';
+export const DEFAULT_RESOLUTION_STORAGE_KEY = 'stickup_pref_default_resolution';
 
 export const DEFAULT_SIZE_PRESETS: SizePreset[] = [
   { label: 'Original', value: 'original' },
@@ -11,6 +12,19 @@ export const DEFAULT_SIZE_PRESETS: SizePreset[] = [
   { label: '256x256', width: 256, height: 256, value: '256' },
   { label: '512x512', width: 512, height: 512, value: '512' }
 ];
+
+function loadSavedDefaultResolution(): string {
+  if (typeof localStorage === 'undefined') return 'original';
+  try {
+    const val = localStorage.getItem(DEFAULT_RESOLUTION_STORAGE_KEY);
+    if (val && typeof val === 'string' && val.trim().length > 0) {
+      return val.trim();
+    }
+  } catch {
+    // Ignore
+  }
+  return 'original';
+}
 
 function loadSavedCustomSizes(): SizePreset[] {
   if (typeof localStorage === 'undefined') return [];
@@ -45,11 +59,24 @@ function saveCustomSizes(items: SizePreset[]): void {
 }
 
 export const customSizes = writable<SizePreset[]>(loadSavedCustomSizes());
+export const defaultResolution = writable<string>(loadSavedDefaultResolution());
 
 export const allSizePresets = derived(customSizes, ($custom) => [
   ...DEFAULT_SIZE_PRESETS,
   ...$custom
 ]);
+
+export function setDefaultResolution(value: string): void {
+  const clean = value?.trim() || 'original';
+  defaultResolution.set(clean);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(DEFAULT_RESOLUTION_STORAGE_KEY, clean);
+    } catch {
+      // Ignore
+    }
+  }
+}
 
 export function addCustomSize(width: number, height: number): SizePreset | null {
   const w = Math.round(width);
@@ -83,5 +110,56 @@ export function removeCustomSize(value: string): void {
     saveCustomSizes(updated);
     return updated;
   });
+
+  defaultResolution.update((curr) => {
+    if (curr === value) {
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(DEFAULT_RESOLUTION_STORAGE_KEY, 'original');
+        } catch {
+          // Ignore
+        }
+      }
+      return 'original';
+    }
+    return curr;
+  });
+}
+
+export function resolveDefaultDimensions(
+  emote: { original_width: number; original_height: number } | null,
+  defaultRes: string,
+  customList: SizePreset[] = []
+): { width: number; height: number; label: string } {
+  if (!emote) return { width: 48, height: 48, label: '48×48' };
+  if (!defaultRes || defaultRes === 'original') {
+    return {
+      width: emote.original_width,
+      height: emote.original_height,
+      label: 'Original'
+    };
+  }
+  const all = [...DEFAULT_SIZE_PRESETS, ...customList];
+  const found = all.find((p) => p.value === defaultRes);
+  if (found && typeof found.width === 'number') {
+    return {
+      width: found.width,
+      height: found.height ?? found.width,
+      label: found.label
+    };
+  }
+  const match = defaultRes.match(/^(?:custom_)?(\d+)x(\d+)$/i);
+  if (match) {
+    const w = parseInt(match[1], 10);
+    const h = parseInt(match[2], 10);
+    if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
+      return { width: w, height: h, label: `${w}×${h}` };
+    }
+  }
+  return {
+    width: emote.original_width,
+    height: emote.original_height,
+    label: 'Original'
+  };
 }
 

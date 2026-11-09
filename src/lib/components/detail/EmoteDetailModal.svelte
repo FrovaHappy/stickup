@@ -11,9 +11,11 @@
   import {
     allSizePresets,
     customSizes,
+    defaultResolution,
     addCustomSize,
     removeCustomSize
   } from '$lib/stores/sizes';
+  import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
   import { toast } from '$lib/stores/toast';
   import {
     SIZE_PRESETS,
@@ -32,7 +34,7 @@
   export let emote: Emote | null = null;
   export let onClose: () => void;
 
-  let selectedSize = 'original';
+  let selectedSize = $defaultResolution || 'original';
   let selectedFormat = 'webp';
 
   let emoteName = '';
@@ -80,6 +82,7 @@
 
   $: if (emote && emote.id !== initializedEmoteId) {
     initializedEmoteId = emote.id;
+    selectedSize = $defaultResolution || 'original';
     emoteName = emote.name ?? '';
     nameError = '';
     copyCount = emote.copy_count ?? 0;
@@ -244,6 +247,9 @@
 
       copyButtonText = '✓ ¡Copiado!';
       showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
+      if ($minimizeOnCopyEnabled) {
+        await api.minimizeWindow();
+      }
       setTimeout(() => {
         copyButtonText = 'Copy to Clipboard (Ctrl+C)';
       }, 2200);

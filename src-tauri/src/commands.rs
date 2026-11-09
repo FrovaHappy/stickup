@@ -1455,6 +1455,28 @@ pub fn set_minimize_to_tray(
 }
 
 #[tauri::command]
+pub fn get_minimize_on_copy() -> Result<bool, String> {
+    let conn = db::ensure_db()?;
+    Ok(db::get_minimize_on_copy(&conn))
+}
+
+#[tauri::command]
+pub fn set_minimize_on_copy(enabled: bool) -> Result<(), String> {
+    let conn = db::ensure_db()?;
+    db::set_minimize_on_copy(&conn, enabled)
+}
+
+#[tauri::command]
+pub fn minimize_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        window.minimize().map_err(|e| e.to_string())
+    } else {
+        Err("No se encontró la ventana principal".to_string())
+    }
+}
+
+#[tauri::command]
 pub fn get_global_shortcut() -> Result<String, String> {
     let conn = db::ensure_db()?;
     Ok(db::get_global_shortcut(&conn))

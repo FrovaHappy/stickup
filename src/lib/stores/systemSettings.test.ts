@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   autostartEnabled,
   minimizeToTrayEnabled,
+  minimizeOnCopyEnabled,
   globalShortcut,
   DEFAULT_GLOBAL_SHORTCUT,
   systemSettingsLoading,
   loadSystemSettings,
   setAutostartSetting,
   setMinimizeToTraySetting,
+  setMinimizeOnCopySetting,
+  triggerMinimizeWindow,
   setGlobalShortcutSetting,
   formatShortcutKeys,
   setSystemServiceForTesting,
@@ -19,7 +22,9 @@ describe('systemSettings store', () => {
   let mockState = {
     autostart: false,
     minimizeToTray: false,
-    globalShortcut: DEFAULT_GLOBAL_SHORTCUT
+    minimizeOnCopy: false,
+    globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
+    minimized: false
   };
 
   const mockService: SystemService = {
@@ -37,6 +42,17 @@ describe('systemSettings store', () => {
       mockState.minimizeToTray = enable;
       return true;
     },
+    async isMinimizeOnCopy() {
+      return mockState.minimizeOnCopy;
+    },
+    async setMinimizeOnCopy(enable: boolean) {
+      mockState.minimizeOnCopy = enable;
+      return true;
+    },
+    async minimizeWindow() {
+      mockState.minimized = true;
+      return true;
+    },
     async getGlobalShortcut() {
       return mockState.globalShortcut;
     },
@@ -50,11 +66,14 @@ describe('systemSettings store', () => {
     mockState = {
       autostart: false,
       minimizeToTray: false,
-      globalShortcut: DEFAULT_GLOBAL_SHORTCUT
+      minimizeOnCopy: false,
+      globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
+      minimized: false
     };
     setSystemServiceForTesting(mockService);
     autostartEnabled.set(false);
     minimizeToTrayEnabled.set(false);
+    minimizeOnCopyEnabled.set(false);
     globalShortcut.set(DEFAULT_GLOBAL_SHORTCUT);
     systemSettingsLoading.set(false);
   });
@@ -62,25 +81,57 @@ describe('systemSettings store', () => {
   it('loads system settings and updates stores', async () => {
     mockState.autostart = true;
     mockState.minimizeToTray = true;
+    mockState.minimizeOnCopy = true;
     mockState.globalShortcut = 'Alt+Shift+Period';
 
     const res = await loadSystemSettings(mockService);
-    expect(res).toEqual({ autostart: true, minimizeToTray: true, globalShortcut: 'Alt+Shift+Period' });
+    expect(res).toEqual({
+      autostart: true,
+      minimizeToTray: true,
+      minimizeOnCopy: true,
+      globalShortcut: 'Alt+Shift+Period'
+    });
 
     let autoVal: boolean | undefined;
     let trayVal: boolean | undefined;
+    let copyVal: boolean | undefined;
     let shortcutVal: string | undefined;
     let loadingVal: boolean | undefined;
 
     autostartEnabled.subscribe((v) => (autoVal = v))();
     minimizeToTrayEnabled.subscribe((v) => (trayVal = v))();
+    minimizeOnCopyEnabled.subscribe((v) => (copyVal = v))();
     globalShortcut.subscribe((v) => (shortcutVal = v))();
     systemSettingsLoading.subscribe((v) => (loadingVal = v))();
 
     expect(autoVal).toBe(true);
     expect(trayVal).toBe(true);
+    expect(copyVal).toBe(true);
     expect(shortcutVal).toBe('Alt+Shift+Period');
     expect(loadingVal).toBe(false);
+  });
+
+  it('toggles and updates minimizeOnCopy setting and triggers minimize', async () => {
+    expect(mockState.minimizeOnCopy).toBe(false);
+    const success = await setMinimizeOnCopySetting(true, mockService);
+    expect(success).toBe(true);
+    expect(mockState.minimizeOnCopy).toBe(true);
+
+    let copyVal: boolean | undefined;
+    minimizeOnCopyEnabled.subscribe((v) => (copyVal = v))();
+    expect(copyVal).toBe(true);
+
+    // Test minimizeWindow trigger
+    expect(mockState.minimized).toBe(false);
+    const minSuccess = await triggerMinimizeWindow(mockService);
+    expect(minSuccess).toBe(true);
+    expect(mockState.minimized).toBe(true);
+
+    // Disable
+    await setMinimizeOnCopySetting(false, mockService);
+    expect(mockState.minimizeOnCopy).toBe(false);
+    minimizeOnCopyEnabled.subscribe((v) => (copyVal = v))();
+    expect(copyVal).toBe(false);
   });
 
   it('toggles and updates autostart setting', async () => {

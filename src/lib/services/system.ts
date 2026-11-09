@@ -10,6 +10,9 @@ export interface SystemService {
   setAutostart(enable: boolean): Promise<boolean>;
   isMinimizeToTray(): Promise<boolean>;
   setMinimizeToTray(enabled: boolean): Promise<boolean>;
+  isMinimizeOnCopy(): Promise<boolean>;
+  setMinimizeOnCopy(enabled: boolean): Promise<boolean>;
+  minimizeWindow(): Promise<boolean>;
   getGlobalShortcut(): Promise<string>;
   setGlobalShortcut(shortcut: string): Promise<string>;
 }
@@ -43,6 +46,28 @@ export const systemService: SystemService = {
   async setMinimizeToTray(enabled: boolean): Promise<boolean> {
     await api.setMinimizeToTray(enabled);
     return true;
+  },
+
+  async isMinimizeOnCopy(): Promise<boolean> {
+    try {
+      return await api.getMinimizeOnCopy();
+    } catch {
+      return false;
+    }
+  },
+
+  async setMinimizeOnCopy(enabled: boolean): Promise<boolean> {
+    await api.setMinimizeOnCopy(enabled);
+    return true;
+  },
+
+  async minimizeWindow(): Promise<boolean> {
+    try {
+      await api.minimizeWindow();
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   async getGlobalShortcut(): Promise<string> {

@@ -7,7 +7,8 @@
   import { ContextMenu } from '$lib/components/system-ui';
   import { api } from '$lib/services/api';
   import emotes, { loadEmotes, type Emote } from '$lib/stores/emotes';
-  import { customSizes } from '$lib/stores/sizes';
+  import { customSizes, defaultResolution, resolveDefaultDimensions } from '$lib/stores/sizes';
+  import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
   import { toast } from '$lib/stores/toast';
   import { sortOption, sortEmotesList } from '$lib/stores/preferences';
   import { toPascalCase } from '$lib/utils/format';
@@ -30,15 +31,19 @@
   async function handleEmoteCopy(emote: Emote) {
     if (selected) return;
     try {
+      const resolved = resolveDefaultDimensions(emote, $defaultResolution, $customSizes);
       await api.copyToClipboard(
         emote.id,
         emote.path,
         emote.format,
-        emote.original_width,
-        emote.original_height
+        resolved.width,
+        resolved.height
       );
-      toast.success(`✓ ¡Emote "${emote.name}" copiado al portapapeles!`);
+      toast.success(`✓ ¡Emote "${emote.name}" copiado (${resolved.label})!`);
       await loadEmotes();
+      if ($minimizeOnCopyEnabled) {
+        await api.minimizeWindow();
+      }
     } catch (err: any) {
       toast.error(`Error al copiar: ${err?.message || err}`);
     }
@@ -60,6 +65,9 @@
       );
       toast.success(`✓ ¡"${emote.name}" copiado (${sizeLabel})!`);
       await loadEmotes();
+      if ($minimizeOnCopyEnabled) {
+        await api.minimizeWindow();
+      }
     } catch (err: any) {
       toast.error(`Error al copiar: ${err?.message || err}`);
     }
@@ -120,33 +128,58 @@
   $: contextMenuItems = (() => {
     if (!contextMenuEmote) return [];
     const emote = contextMenuEmote;
+    const defaultRes = resolveDefaultDimensions(emote, $defaultResolution, $customSizes);
 
-    const customSizeItems = $customSizes.map((cs) => ({
-      label: `Copiar ${cs.label}`,
-      icon: Scaling,
-      action: () =>
-        cs.width &&
-        cs.height &&
-        handleEmoteCopyWithSize(emote, cs.width, cs.height, cs.label)
-    }));
+    const customSizeItems = $customSizes
+      .filter((cs) => cs.value !== $defaultResolution)
+      .map((cs) => ({
+        label: `Copiar ${cs.label}`,
+        icon: Scaling,
+        action: () =>
+          cs.width &&
+          cs.height &&
+          handleEmoteCopyWithSize(emote, cs.width, cs.height, cs.label)
+      }));
+
+    const standardSizes = [
+      { value: '48', label: '48×48 (Emote)', w: 48, h: 48 },
+      { value: '128', label: '128×128 (Grande)', w: 128, h: 128 }
+    ];
+
+    const standardSizeItems = standardSizes
+      .filter((s) => s.value !== $defaultResolution)
+      .map((s) => ({
+        label: `Copiar ${s.label}`,
+        icon: Scaling,
+        action: () => handleEmoteCopyWithSize(emote, s.w, s.h, s.label)
+      }));
+
+    const originalItem =
+      $defaultResolution !== 'original'
+        ? [
+            {
+              label: 'Copiar Original',
+              icon: Scaling,
+              action: () =>
+                handleEmoteCopyWithSize(
+                  emote,
+                  emote.original_width,
+                  emote.original_height,
+                  'Original'
+                )
+            }
+          ]
+        : [];
 
     return [
       {
-        label: 'Copiar emote (Original)',
+        label: `Copiar emote (${defaultRes.label})`,
         icon: Copy,
         shortcut: 'Ctrl+C',
         action: () => handleEmoteCopy(emote)
       },
-      {
-        label: 'Copiar 48×48 (Emote)',
-        icon: Scaling,
-        action: () => handleEmoteCopyWithSize(emote, 48, 48, '48×48')
-      },
-      {
-        label: 'Copiar 128×128 (Grande)',
-        icon: Scaling,
-        action: () => handleEmoteCopyWithSize(emote, 128, 128, '128×128')
-      },
+      ...originalItem,
+      ...standardSizeItems,
       ...customSizeItems,
       { divider: true, label: '' },
       {

@@ -280,6 +280,26 @@ pub fn set_minimize_to_tray(conn: &Connection, enabled: bool) -> Result<(), Stri
     Ok(())
 }
 
+pub fn get_minimize_on_copy(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'minimize_on_copy'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .map(|v| v == "true" || v == "1")
+    .unwrap_or(false)
+}
+
+pub fn set_minimize_on_copy(conn: &Connection, enabled: bool) -> Result<(), String> {
+    let val = if enabled { "true" } else { "false" };
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('minimize_on_copy', ?1)",
+        params![val],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub const DEFAULT_GLOBAL_SHORTCUT: &str = "Super+Control+Period";
 
 pub fn get_global_shortcut(conn: &Connection) -> String {
@@ -721,6 +741,27 @@ mod tests {
         // Establecer en false
         set_minimize_to_tray(&conn, false).unwrap();
         assert!(!get_minimize_to_tray(&conn));
+    }
+
+    #[test]
+    fn test_get_and_set_minimize_on_copy() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+            [],
+        )
+        .unwrap();
+
+        // Por defecto es false
+        assert!(!get_minimize_on_copy(&conn));
+
+        // Establecer en true
+        set_minimize_on_copy(&conn, true).unwrap();
+        assert!(get_minimize_on_copy(&conn));
+
+        // Establecer en false
+        set_minimize_on_copy(&conn, false).unwrap();
+        assert!(!get_minimize_on_copy(&conn));
     }
 
     #[test]

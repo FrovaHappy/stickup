@@ -1,20 +1,40 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { ArrowLeft, Database, Sliders, Info, ShieldCheck, Monitor, Keyboard, RotateCcw } from '@lucide/svelte';
+  import {
+    ArrowLeft,
+    Database,
+    Sliders,
+    Info,
+    ShieldCheck,
+    Monitor,
+    Keyboard,
+    RotateCcw,
+    Star
+  } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
   import { Button, Badge, Logo } from '$lib/components/system-ui';
-  import { customSizes, addCustomSize, removeCustomSize, DEFAULT_SIZE_PRESETS } from '$lib/stores/sizes';
+  import {
+    customSizes,
+    addCustomSize,
+    removeCustomSize,
+    DEFAULT_SIZE_PRESETS,
+    allSizePresets,
+    defaultResolution,
+    setDefaultResolution
+  } from '$lib/stores/sizes';
   import { toast } from '$lib/stores/toast';
   import {
     autostartEnabled,
     minimizeToTrayEnabled,
+    minimizeOnCopyEnabled,
     globalShortcut,
     DEFAULT_GLOBAL_SHORTCUT,
     systemSettingsLoading,
     loadSystemSettings,
     setAutostartSetting,
     setMinimizeToTraySetting,
+    setMinimizeOnCopySetting,
     setGlobalShortcutSetting,
     formatShortcutKeys
   } from '$lib/stores/systemSettings';
@@ -132,6 +152,11 @@
     removeCustomSize(value);
     toast.success(`Tamaño ${label} eliminado`);
   }
+
+  function handleSetFavoriteResolution(value: string, label: string) {
+    setDefaultResolution(value);
+    toast.success(`✓ Resolución favorita establecida en ${label} (Ctrl+C)`);
+  }
 </script>
 
 <div class="settings-page">
@@ -209,6 +234,29 @@
               disabled={$systemSettingsLoading}
               title={$minimizeToTrayEnabled ? 'Desactivar minimizar en la bandeja' : 'Activar minimizar en la bandeja'}
               on:click={() => setMinimizeToTraySetting(!$minimizeToTrayEnabled)}
+            >
+              <span class="toggle-thumb"></span>
+            </button>
+          </div>
+
+          <div class="toggle-separator"></div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Minimizar al copiar emote</span>
+              <p class="toggle-desc">
+                Minimiza automáticamente la ventana de StickUp tras copiar un emote con éxito al portapapeles.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={$minimizeOnCopyEnabled}
+              class="toggle-switch"
+              class:active={$minimizeOnCopyEnabled}
+              disabled={$systemSettingsLoading}
+              title={$minimizeOnCopyEnabled ? 'Desactivar minimizar al copiar' : 'Activar minimizar al copiar'}
+              on:click={() => setMinimizeOnCopySetting(!$minimizeOnCopyEnabled)}
             >
               <span class="toggle-thumb"></span>
             </button>
@@ -305,6 +353,40 @@
         <p class="section-desc">
           Configura dimensiones personalizadas para copiar emotes con tamaños específicos desde el menú contextual.
         </p>
+
+        <div class="favorite-resolution-box">
+          <div class="favorite-header-row">
+            <div class="favorite-info">
+              <span class="favorite-title">Resolución favorita por defecto (Atajo Ctrl+C)</span>
+              <p class="section-desc">
+                Selecciona la resolución predeterminada al copiar cualquier emote con el atajo de teclado <code>Ctrl+C</code> o desde la acción principal del menú contextual.
+              </p>
+            </div>
+          </div>
+          <div class="favorite-chips-grid">
+            {#each $allSizePresets as preset}
+              {@const isFav = $defaultResolution === preset.value}
+              <button
+                type="button"
+                class="favorite-chip-btn"
+                class:active={isFav}
+                aria-pressed={isFav}
+                on:click={() => handleSetFavoriteResolution(preset.value, preset.label)}
+                title={isFav ? `Resolución favorita actual: ${preset.label}` : `Elegir ${preset.label} como resolución favorita`}
+              >
+                <Star
+                  size={14}
+                  class={isFav ? 'star-icon star-active' : 'star-icon'}
+                  fill={isFav ? 'currentColor' : 'none'}
+                />
+                <span>{preset.label}</span>
+                {#if isFav}
+                  <span class="favorite-tag">Favorita</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        </div>
 
         <div class="sizes-list">
           <div class="sizes-group">
@@ -548,6 +630,81 @@
 
   .sync-action {
     flex-shrink: 0;
+  }
+
+  /* Resolución favorita por defecto */
+  .favorite-resolution-box {
+    padding: 16px;
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .favorite-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f4f4f5;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .favorite-chips-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .favorite-chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    color: #d4d4d8;
+    transition: all 0.15s ease;
+  }
+
+  .favorite-chip-btn:hover {
+    border-color: rgba(249, 115, 22, 0.4);
+    color: #ffffff;
+    background: rgba(249, 115, 22, 0.06);
+  }
+
+  .favorite-chip-btn:focus-visible {
+    outline: 2px solid var(--color-orange-primary);
+    outline-offset: 2px;
+  }
+
+  .favorite-chip-btn.active {
+    border-color: var(--color-orange-primary);
+    background: rgba(249, 115, 22, 0.12);
+    color: #fed7aa;
+  }
+
+  .favorite-chip-btn :global(.star-active) {
+    color: var(--color-orange-primary);
+  }
+
+  .favorite-tag {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--color-orange-primary);
+    color: #ffffff;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    margin-left: 2px;
   }
 
   /* Tamaños personalizados */
