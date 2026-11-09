@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ClipboardInspectResult, Emote, ResyncStats } from '$lib/types/emote';
 import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
-import type { ScannedImage, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
+import type { ScannedImage, RawScannedItem, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
 
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
@@ -51,6 +51,8 @@ export const api = {
   scanUrl: (url: string) => invoke<ScannedImage[]>('scan_url', { url }),
   scanHtml: (html: string, baseUrl?: string) =>
     invoke<ScannedImage[]>('scan_html', { html, baseUrl: baseUrl?.trim() || null }),
+  processScannedUrls: (items: RawScannedItem[], baseUrl?: string) =>
+    invoke<ScannedImage[]>('process_scanned_urls', { items, baseUrl: baseUrl?.trim() || null }),
   importScannedImages: (items: ScannedImageImportRequest[]) =>
     invoke<BatchImportResult>('import_scanned_images', { items }),
   openExternalUrl: (url: string) =>

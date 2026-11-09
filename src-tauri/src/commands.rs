@@ -1790,6 +1790,17 @@ pub fn scan_html(
 }
 
 #[tauri::command]
+pub fn process_scanned_urls(
+    items: Vec<crate::models::RawScannedItem>,
+    base_url: Option<String>,
+) -> Result<Vec<crate::models::ScannedImage>, String> {
+    Ok(crate::services::scanner::process_scanned_urls(
+        &items,
+        base_url.as_deref(),
+    ))
+}
+
+#[tauri::command]
 pub fn import_scanned_images(
     items: Vec<crate::models::ScannedImageImportRequest>,
 ) -> Result<crate::models::BatchImportResult, String> {

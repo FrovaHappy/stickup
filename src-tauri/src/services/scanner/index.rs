@@ -1,5 +1,5 @@
 use crate::commands::to_pascal_case;
-use crate::models::ScannedImage;
+use crate::models::{RawScannedItem, ScannedImage};
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
@@ -588,6 +588,63 @@ pub fn extract_images_from_html(html: &str, base_url: Option<&str>) -> Vec<Scann
     results
 }
 
+/// Procesa una lista de elementos recolectados durante la navegación en vivo,
+/// resolviendo rutas relativas contra `base_url`, normalizando CDNs (como Discord),
+/// deduplicando y generando nombres sugeridos en PascalCase.
+pub fn process_scanned_urls(items: &[RawScannedItem], base_url: Option<&str>) -> Vec<ScannedImage> {
+    let mut seen = HashSet::new();
+    let mut results = Vec::new();
+
+    for item in items {
+        let clean = item.url.trim();
+        if clean.is_empty() {
+            continue;
+        }
+
+        if clean.starts_with("data:image/") {
+            if seen.insert(clean.to_string()) {
+                let name = suggest_name(clean, item.alt.as_deref());
+                let fmt = infer_format(clean);
+                results.push(ScannedImage {
+                    url: clean.to_string(),
+                    alt: item.alt.clone(),
+                    suggested_name: name,
+                    format_hint: fmt,
+                });
+            }
+            continue;
+        }
+
+        let resolved = match resolve_url(clean, base_url) {
+            Some(u) => u,
+            None => clean.to_string(),
+        };
+
+        if resolved.is_empty() {
+            continue;
+        }
+
+        let final_url = if is_discord_cdn_url(&resolved) {
+            normalize_discord_url(&resolved)
+        } else {
+            resolved
+        };
+
+        if seen.insert(final_url.clone()) {
+            let fmt = infer_format(&final_url);
+            let name = suggest_name(&final_url, item.alt.as_deref());
+            results.push(ScannedImage {
+                url: final_url,
+                alt: item.alt.clone(),
+                suggested_name: name,
+                format_hint: fmt,
+            });
+        }
+    }
+
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -838,5 +895,42 @@ mod tests {
         assert!(is_direct_image_url("https://example.com/animation.gif?v=2"));
         assert!(!is_direct_image_url("https://example.com/gallery"));
         assert!(!is_direct_image_url("https://discord.com/channels/123/456"));
+    }
+
+    #[test]
+    fn test_process_scanned_urls() {
+        let items = vec![
+            RawScannedItem {
+                url: "https://example.com/cat.png".to_string(),
+                alt: Some("funny cat".to_string()),
+            },
+            RawScannedItem {
+                url: "https://example.com/cat.png".to_string(), // Duplicado exacto
+                alt: None,
+            },
+            RawScannedItem {
+                url: "/emotes/pepe.gif".to_string(), // Relativo
+                alt: None,
+            },
+            RawScannedItem {
+                url: "https://cdn.discordapp.com/emojis/999888.webp?size=64&animated=true".to_string(),
+                alt: Some(":vibe_party:".to_string()),
+            },
+        ];
+
+        let results = process_scanned_urls(&items, Some("https://example.com/stream/"));
+        assert_eq!(results.len(), 3);
+
+        assert_eq!(results[0].url, "https://example.com/cat.png");
+        assert_eq!(results[0].suggested_name, "FunnyCat");
+        assert_eq!(results[0].format_hint, Some("png".to_string()));
+
+        assert_eq!(results[1].url, "https://example.com/emotes/pepe.gif");
+        assert_eq!(results[1].suggested_name, "Pepe");
+        assert_eq!(results[1].format_hint, Some("gif".to_string()));
+
+        assert_eq!(results[2].url, "https://cdn.discordapp.com/emojis/999888.gif");
+        assert_eq!(results[2].suggested_name, "VibeParty");
+        assert_eq!(results[2].format_hint, Some("gif".to_string()));
     }
 }

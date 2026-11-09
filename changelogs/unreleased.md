@@ -1,6 +1,15 @@
 # Unreleased
 
 ### Added
+- Barra de herramientas flotante pegajosa (`sticky`) en la sección de resultados del Escáner, manteniéndose visible permanentemente al desplazarse por la grilla de imágenes.
+- Opciones de eliminación en la lista de imágenes escaneadas: botón de descarte individual por tarjeta y acciones en lote ("Eliminar seleccionadas" / "Limpiar todo") en la barra de herramientas.
+- Guía didáctica interactiva en el banner de "Captura en vivo" del Escáner explicando qué es un Bookmarklet y cómo configurarlo paso a paso en cualquier navegador.
+- Visor modal del código del script colector (`Modal`) con inspección completa, botón de copia rápida y enlace directo al archivo `domCollector.ts` en el repositorio de GitHub (`https://github.com/FrovaHappy/stickup/blob/main/src/lib/utils/domCollector.ts`).
+- Botón de acceso directo al repositorio de GitHub en la sección "Acerca de StickUp" de Ajustes (`/settings`).
+- Modo "Captura en vivo" en el Escáner (`/scanner`) con colector periódico de DOM (intervalo de 1s), desduplicación reactiva en `Set` y filtro heurístico de dimensiones (16px a 512px) para navegación interactiva libre.
+- Generador de Bookmarklet y script inyectable con panel flotante interactivo (botones "Iniciar" y "Parar y Copiar") para capturar emotes mientras se navega por cualquier web (Twitch, 7TV, Discord, etc.).
+- Comando IPC `process_scanned_urls` en Rust para procesar, normalizar y desduplicar lotes de URLs extraídas en vivo, asignando nombres sugeridos en PascalCase a partir de atributos `alt` y normalizando animaciones de Discord CDN.
+- Módulo de utilidades `domCollector.ts` con generador de scripts, bookmarklets y parser tolerante a fallos para cargas por portapapeles o texto plano.
 - Sistema de gestión de versiones con comprobación automática (intervalo de 24 horas) y manual contra GitHub Releases.
 - Detección de "versión caliente / reciente" (< 24 horas de publicación) con advertencia suave para el usuario.
 - Doble modalidad de actualización: descarga directa en la app (con ejecución automática) o apertura asistida en navegador web.
@@ -9,9 +18,11 @@
 - Indicador visual reactivo en el icono de Ajustes de la barra lateral al detectar una versión superior.
 
 ### Changed
+- Establecida la pestaña "Captura en vivo" como pestaña inicial y modo predeterminado al entrar a `/scanner`.
+- Unificación de las acciones y guía de "Captura en vivo" en un único componente integrado, reubicando la botonera de acciones principales en la parte superior.
 - Conexión de la versión en Ajustes ("Acerca de StickUp") a la versión real de `Cargo.toml` (`get_app_version`).
 - Rediseño del modal de información del emote (`EmoteDetailModal`): reubicación de la sección de tags justo debajo del botón principal de copiar, ampliación del ancho a 750px y organización en cuadrícula limpia de metadatos.
 - Alineación del diseño visual e iconografía de `EmoteDetailModal` y `TagManager` con el Design System de StickUp (uso de `@lucide/svelte`, badges semánticos, chips en ámbar y tokens `--color-orange-primary`).
 
 ### Fixed
-- 
+- Corrección en la generación de Bookmarklets: eliminación de la codificación URI agresiva (caracteres `%20`, `%0A`, `%7B`) y sustitución de colores hexadecimales por valores RGB para evitar cortes y garantizar compatibilidad directa y legible en navegadores. 

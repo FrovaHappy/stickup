@@ -61,6 +61,13 @@ pub struct ScannedImage {
     pub format_hint: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct RawScannedItem {
+    pub url: String,
+    #[serde(default)]
+    pub alt: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ScannedImageImportRequest {
     pub url: String,

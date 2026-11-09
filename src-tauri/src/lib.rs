@@ -187,6 +187,7 @@ pub fn run() {
             commands::set_global_shortcut,
             commands::scan_url,
             commands::scan_html,
+            commands::process_scanned_urls,
             commands::import_scanned_images,
             commands::open_external_url,
             commands::download_update_asset,

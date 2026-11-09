@@ -7,6 +7,11 @@ export interface ScannedImage {
   format_hint?: string | null;
 }
 
+export interface RawScannedItem {
+  url: string;
+  alt?: string | null;
+}
+
 export interface ScannedImageImportRequest {
   url: string;
   name?: string | null;

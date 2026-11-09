@@ -13,21 +13,39 @@
     Upload,
     Trash2,
     ExternalLink,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Radio,
+    ClipboardPaste,
+    Code,
+    Bookmark
   } from "@lucide/svelte";
-  import { Button, Input, Badge, Alert } from "$lib/components/system-ui";
+  import { Button, Input, Badge, Alert, Modal } from "$lib/components/system-ui";
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
   import type { ScannedImage, ScannedImageImportRequest } from "$lib/types/scanner";
+  import { generateCollectorScript, generateBookmarklet, parseCollectorInput } from "$lib/utils/domCollector";
 
-  type ScanTab = "url" | "html";
+  const GITHUB_COLLECTOR_FILE_URL = "https://github.com/FrovaHappy/stickup/blob/main/src/lib/utils/domCollector.ts";
 
-  let activeTab: ScanTab = "url";
+  type ScanTab = "live" | "url" | "html";
+
+  let activeTab: ScanTab = "live";
   let targetUrl = "";
   let rawHtml = "";
   let htmlBaseUrl = "";
+  let liveInput = "";
+  let liveBaseUrl = "";
+  let showCodeModal = false;
   let isScanning = false;
+
+  $: collectorScriptCode = generateCollectorScript();
+
+  function openCollectorFileInGitHub() {
+    api.openExternalUrl(GITHUB_COLLECTOR_FILE_URL).catch(() => {
+      window.open(GITHUB_COLLECTOR_FILE_URL, "_blank");
+    });
+  }
   let isImporting = false;
   let scanError: string | null = null;
 
@@ -115,6 +133,78 @@
     }
   }
 
+  async function handleCopyCollector() {
+    try {
+      const code = generateCollectorScript();
+      await navigator.clipboard.writeText(code);
+      toast.success("Script colector copiado. Pégalo en la consola (F12) de tu navegador.");
+    } catch (_) {
+      toast.error("No se pudo copiar el script.");
+    }
+  }
+
+  async function handleCopyBookmarklet() {
+    try {
+      const code = generateBookmarklet();
+      await navigator.clipboard.writeText(code);
+      toast.success("Bookmarklet copiado. Crea un marcador con esta URL en tu navegador.");
+    } catch (_) {
+      toast.error("No se pudo copiar el bookmarklet.");
+    }
+  }
+
+  async function handlePasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        toast.info("El portapapeles está vacío.");
+        return;
+      }
+      liveInput = text;
+      await handleProcessLive(text);
+    } catch (err: any) {
+      toast.error("No se pudo leer el portapapeles: " + (err?.message || err));
+    }
+  }
+
+  async function handleProcessLive(customText?: string) {
+    const raw = (customText !== undefined ? customText : liveInput).trim();
+    if (!raw) {
+      scanError = "Por favor, pega el JSON de captura o la lista de URLs recolectadas.";
+      return;
+    }
+
+    const { items, source } = parseCollectorInput(raw);
+    if (items.length === 0) {
+      scanError = "No se encontraron URLs válidas en el contenido pegado.";
+      return;
+    }
+
+    scanError = null;
+    isScanning = true;
+    try {
+      const baseUrl = source || liveBaseUrl.trim() || undefined;
+      const results = await api.processScannedUrls(items, baseUrl);
+      scannedImages = (results || []).map((img) => ({
+        ...img,
+        selected: true,
+        saved: false
+      }));
+
+      if (scannedImages.length === 0) {
+        toast.info("No se pudieron procesar las imágenes.");
+      } else {
+        toast.success(`Se capturaron y procesaron ${scannedImages.length} imágenes.`);
+      }
+    } catch (err: any) {
+      console.error("Process live URLs failed", err);
+      scanError = typeof err === "string" ? err : err?.message || "Error al procesar las imágenes.";
+      scannedImages = [];
+    } finally {
+      isScanning = false;
+    }
+  }
+
   function handleSelectAll() {
     scannedImages = scannedImages.map((img) => ({ ...img, selected: true }));
   }
@@ -130,6 +220,28 @@
   function toggleItemSelection(index: number) {
     scannedImages[index].selected = !scannedImages[index].selected;
     scannedImages = [...scannedImages];
+  }
+
+  function handleDeleteSingle(index: number) {
+    if (index >= 0 && index < scannedImages.length) {
+      const removed = scannedImages.splice(index, 1);
+      scannedImages = [...scannedImages];
+      toast.info(`Imagen "${removed[0]?.suggested_name || 'seleccionada'}" eliminada.`);
+    }
+  }
+
+  function handleDeleteSelected() {
+    const toDeleteCount = selectedCount;
+    if (toDeleteCount === 0) return;
+    scannedImages = scannedImages.filter((img) => !img.selected);
+    toast.info(`Se eliminaron ${toDeleteCount} imágenes de la lista.`);
+  }
+
+  function handleClearAll() {
+    if (scannedImages.length === 0) return;
+    const total = scannedImages.length;
+    scannedImages = [];
+    toast.info(`Se limpiaron ${total} imágenes de la lista.`);
   }
 
   async function handleSaveSelected() {
@@ -268,6 +380,17 @@
     <button
       type="button"
       class="tab-btn"
+      class:active={activeTab === "live"}
+      role="tab"
+      aria-selected={activeTab === "live"}
+      on:click={() => (activeTab = "live")}
+    >
+      <Radio size={18} class={activeTab === "live" ? "tab-icon-active" : ""} />
+      <span>Captura en vivo</span>
+    </button>
+    <button
+      type="button"
+      class="tab-btn"
       class:active={activeTab === "url"}
       role="tab"
       aria-selected={activeTab === "url"}
@@ -291,7 +414,149 @@
 
   <!-- Formulario de Entrada -->
   <div class="input-panel">
-    {#if activeTab === "url"}
+    {#if activeTab === "live"}
+      <div class="live-capture-section">
+        <div class="live-unified-card">
+          <!-- 1. Barra de Acciones Principales Arriba -->
+          <div class="live-actions-top-bar">
+            <div class="primary-action-wrap">
+              <Button
+                variant="primary"
+                loading={isScanning}
+                on:click={handlePasteFromClipboard}
+                title="Pegar y cargar capturas del portapapeles"
+              >
+                <ClipboardPaste size={16} />
+                <span>Pegar desde Portapapeles</span>
+              </Button>
+            </div>
+
+            <div class="secondary-actions-wrap">
+              <Button
+                variant="secondary"
+                on:click={handleCopyBookmarklet}
+                title="Copiar código del bookmarklet para tu barra de favoritos"
+              >
+                <Copy size={15} />
+                <span>Copiar Bookmarklet</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                on:click={handleCopyCollector}
+                title="Copiar script para la consola de desarrollo (F12)"
+              >
+                <Code size={15} />
+                <span>Copiar Script (F12)</span>
+              </Button>
+
+              <Button
+                variant="ghost"
+                on:click={() => (showCodeModal = true)}
+                title="Ver e inspeccionar el código JavaScript"
+              >
+                <Code size={15} />
+                <span>Ver código</span>
+              </Button>
+
+              <Button
+                variant="ghost"
+                on:click={openCollectorFileInGitHub}
+                title="Abrir domCollector.ts en GitHub"
+              >
+                <ExternalLink size={15} />
+                <span>GitHub</span>
+              </Button>
+            </div>
+          </div>
+
+          <!-- 2. Información y Guía didáctica Bookmarklet -->
+          <div class="live-banner-content">
+            <div class="banner-badge">
+              <Radio size={15} class="pulse-icon" />
+              <span>Colector DOM en vivo</span>
+            </div>
+            <p class="banner-description">
+              Navega libremente por Twitch, 7TV, Discord, etc. El colector consulta el DOM cada 1 segundo y acumula los emotes en un <code>Set</code> para importarlos sin perder transparencia ni animación.
+            </p>
+
+            <div class="bookmarklet-info-box">
+              <div class="bookmarklet-info-header">
+                <Bookmark size={15} class="text-orange" />
+                <strong>¿Cómo usar el Bookmarklet?</strong>
+              </div>
+              <p class="bookmarklet-info-desc">
+                Un <strong>Bookmarklet</strong> es un marcador inteligente que ejecuta una función JavaScript en lugar de abrir una URL. Te permite activar el colector con un clic desde tu barra de favoritos:
+              </p>
+              <div class="bookmarklet-steps-grid">
+                <div class="guide-step-card">
+                  <span class="guide-step-badge">1</span>
+                  <div class="guide-step-content">
+                    <span class="guide-step-title">Copiar Bookmarklet</span>
+                    <p class="guide-step-text">Pulsa <em>"Copiar Bookmarklet"</em> en las acciones superiores.</p>
+                  </div>
+                </div>
+                <div class="guide-step-card">
+                  <span class="guide-step-badge">2</span>
+                  <div class="guide-step-content">
+                    <span class="guide-step-title">Crear Marcador</span>
+                    <p class="guide-step-text">Añade un favorito en tu navegador (Ctrl+D) y pega el código en <em>URL</em>.</p>
+                  </div>
+                </div>
+                <div class="guide-step-card">
+                  <span class="guide-step-badge">3</span>
+                  <div class="guide-step-content">
+                    <span class="guide-step-title">Navegar y Capturar</span>
+                    <p class="guide-step-text">En cualquier web, haz clic en el marcador para <strong>Iniciar</strong> y <strong>Parar</strong>.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Opción manual / Avanzada -->
+          <div class="live-manual-details">
+            <details class="manual-collapsible">
+              <summary class="collapsible-summary">
+                O pegar manualmente JSON o lista de URLs
+              </summary>
+              <div class="collapsible-body">
+                <div class="base-url-input">
+                  <Input
+                    bind:value={liveBaseUrl}
+                    type="url"
+                    placeholder="URL de origen opcional (ej: https://twitch.tv/ o https://7tv.app/)"
+                    disabled={isScanning}
+                  >
+                    <svelte:fragment slot="leading">
+                      <Globe size={16} />
+                    </svelte:fragment>
+                  </Input>
+                </div>
+                <textarea
+                  bind:value={liveInput}
+                  placeholder="Pega aquí el JSON del colector o enlaces directos (uno por línea)..."
+                  rows="4"
+                  class="html-textarea"
+                  disabled={isScanning}
+                ></textarea>
+                <div class="live-manual-actions">
+                  <Button
+                    variant="secondary"
+                    disabled={!liveInput.trim() || isScanning}
+                    loading={isScanning}
+                    on:click={() => handleProcessLive()}
+                  >
+                    <ScanSearch size={16} />
+                    <span>Procesar URLs</span>
+                  </Button>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    {:else if activeTab === "url"}
       <form class="scan-form" on:submit|preventDefault={handleScanUrl}>
         <div class="url-input-row">
           <div class="input-field-wrapper">
@@ -322,7 +587,7 @@
           si son estáticos en WebP o animados en GIF según las reglas de CDN y parámetros como <code>animated=true</code>).
         </p>
       </form>
-    {:else}
+    {:else if activeTab === "html"}
       <div class="html-manual-section">
         <div class="html-controls-row">
           <div class="base-url-input">
@@ -459,6 +724,25 @@
               <RotateCcw size={14} />
               <span>Invertir</span>
             </button>
+            <button
+              type="button"
+              class="action-pill-btn danger-hover"
+              title="Eliminar imágenes seleccionadas de la lista"
+              disabled={selectedCount === 0}
+              on:click={handleDeleteSelected}
+            >
+              <Trash2 size={13} />
+              <span>Eliminar ({selectedCount})</span>
+            </button>
+            <button
+              type="button"
+              class="action-pill-btn danger-hover"
+              title="Limpiar todas las imágenes"
+              on:click={handleClearAll}
+            >
+              <Trash2 size={13} />
+              <span>Limpiar todo</span>
+            </button>
           </div>
         </div>
 
@@ -586,6 +870,15 @@
                     <ExternalLink size={14} />
                   </a>
 
+                  <button
+                    type="button"
+                    class="card-action-btn delete-btn"
+                    title="Eliminar de la lista"
+                    on:click={() => handleDeleteSingle(scannedImages.indexOf(img))}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+
                   {#if !img.saved}
                     <button
                       type="button"
@@ -610,6 +903,41 @@
         </div>
       {/if}
     </section>
+  {/if}
+
+  {#if showCodeModal}
+    <Modal
+      open={showCodeModal}
+      title="Código del Script Colector"
+      maxWidth="720px"
+      onClose={() => (showCodeModal = false)}
+    >
+      <div class="code-modal-content">
+        <p class="code-modal-intro">
+          Este es el script JavaScript que puedes inyectar en la consola (F12) o mediante Bookmarklet para recolectar emotes del DOM cada 1 segundo. Puedes auditarlo, copiarlo o inspeccionar el código fuente en GitHub:
+        </p>
+
+        <div class="code-viewer-container">
+          <pre class="code-viewer-block"><code>{collectorScriptCode}</code></pre>
+        </div>
+
+        <div class="code-modal-footer">
+          <Button variant="outline" on:click={openCollectorFileInGitHub} title="Abrir fichero domCollector.ts en GitHub">
+            <ExternalLink size={15} />
+            <span>Ver domCollector.ts en GitHub</span>
+          </Button>
+          <div class="modal-footer-actions">
+            <Button variant="secondary" on:click={handleCopyCollector}>
+              <Copy size={15} />
+              <span>Copiar script</span>
+            </Button>
+            <Button variant="primary" on:click={() => (showCodeModal = false)}>
+              <span>Cerrar</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   {/if}
 </div>
 
@@ -807,15 +1135,21 @@
   }
 
   .results-toolbar {
+    position: sticky;
+    top: 12px;
+    z-index: 30;
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
     gap: 14px;
-    padding: 14px 18px;
-    background: transparent;
+    padding: 12px 18px;
+    background: rgba(28, 28, 31, 0.94);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--color-border-subtle);
     border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
   }
 
   .toolbar-left,
@@ -887,6 +1221,17 @@
     color: var(--color-text-main);
     border-color: var(--color-orange-primary);
     background: rgba(var(--color-orange-rgb), 0.08);
+  }
+
+  .action-pill-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .action-pill-btn.danger-hover:hover:not(:disabled) {
+    color: #fb7185;
+    border-color: rgba(244, 63, 94, 0.5);
+    background: rgba(244, 63, 94, 0.12);
   }
 
   .search-filter-input {
@@ -1055,6 +1400,12 @@
     background: rgba(var(--color-orange-rgb), 0.1);
   }
 
+  .card-action-btn.delete-btn:hover {
+    color: #fb7185;
+    border-color: rgba(244, 63, 94, 0.5);
+    background: rgba(244, 63, 94, 0.12);
+  }
+
   .card-save-btn {
     flex: 1;
     height: 28px;
@@ -1085,6 +1436,258 @@
     font-weight: 700;
     color: #10b981;
     padding: 4px 8px;
+  }
+
+  /* Captura en Vivo */
+  .live-capture-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .banner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-orange-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  :global(.pulse-icon) {
+    animation: pulse-live 1.8s infinite ease-in-out;
+  }
+
+  @keyframes pulse-live {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.8; }
+  }
+
+  .banner-description {
+    font-size: 12.5px;
+    color: var(--color-text-dim);
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .banner-description code {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-orange-hover);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11.5px;
+  }
+
+  /* Bookmarklet Info Box */
+  .bookmarklet-info-box {
+    margin-top: 6px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(var(--color-orange-rgb), 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bookmarklet-info-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: var(--color-orange-primary);
+  }
+
+  .bookmarklet-info-desc {
+    font-size: 12px;
+    color: var(--color-text-dim);
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  .bookmarklet-steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .guide-step-card {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .guide-step-badge {
+    background: rgba(var(--color-orange-rgb), 0.18);
+    color: var(--color-orange-primary);
+    border: 1px solid rgba(var(--color-orange-rgb), 0.4);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .guide-step-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .guide-step-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-main);
+  }
+
+  .guide-step-text {
+    font-size: 11.5px;
+    color: var(--color-text-dim);
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  /* Live Unified Card */
+  .live-unified-card {
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .live-actions-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 18px;
+    background: rgba(var(--color-orange-rgb), 0.05);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+
+  .primary-action-wrap {
+    display: flex;
+    align-items: center;
+  }
+
+  .secondary-actions-wrap {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .live-banner-content {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .live-manual-details {
+    border-top: 1px dashed var(--color-border-subtle);
+    padding-top: 12px;
+  }
+
+  .manual-collapsible {
+    font-size: 12.5px;
+    color: var(--color-text-dim);
+  }
+
+  .collapsible-summary {
+    cursor: pointer;
+    user-select: none;
+    font-weight: 500;
+    color: var(--color-text-dim);
+    transition: color 0.15s ease;
+  }
+
+  .collapsible-summary:hover {
+    color: var(--color-orange-primary);
+  }
+
+  .collapsible-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .live-manual-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  :global(.tab-icon-active) {
+    color: var(--color-orange-primary);
+  }
+
+  /* Modal de Código */
+  .code-modal-content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .code-modal-intro {
+    font-size: 13px;
+    color: var(--color-text-dim);
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  .code-viewer-container {
+    background: #141416;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .code-viewer-block {
+    margin: 0;
+    padding: 14px 16px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11.5px;
+    color: #e4e4e7;
+    line-height: 1.5;
+    user-select: text;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .code-viewer-block code {
+    font-family: inherit;
+  }
+
+  .code-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border-subtle);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .modal-footer-actions {
+    display: flex;
+    gap: 8px;
   }
 </style>
 

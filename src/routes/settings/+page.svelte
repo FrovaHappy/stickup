@@ -12,11 +12,13 @@
     Star,
     RefreshCw,
     Sparkles,
-    Flame
+    Flame,
+    ExternalLink
   } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
   import { Button, Badge, Logo } from '$lib/components/system-ui';
+  import { api } from '$lib/services/api';
   import {
     currentAppVersion,
     loadCurrentAppVersion,
@@ -58,6 +60,14 @@
   let newSizeWidth: number | null = null;
   let newSizeHeight: number | null = null;
   let isRecordingShortcut = false;
+
+  const GITHUB_REPO_URL = 'https://github.com/FrovaHappy/stickup';
+
+  function openGitHubRepo() {
+    api.openExternalUrl(GITHUB_REPO_URL).catch(() => {
+      window.open(GITHUB_REPO_URL, '_blank');
+    });
+  }
 
   onMount(() => {
     loadSystemSettings();
@@ -512,6 +522,17 @@
               <p class="about-text">
                 Diseñado para copiar rápidamente stickers y emotes optimizados a cualquier aplicación de mensajería (Discord, Telegram, WhatsApp, Slack).
               </p>
+              <div class="about-actions-row">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  on:click={openGitHubRepo}
+                  title="Abrir repositorio de StickUp en GitHub"
+                >
+                  <ExternalLink size={14} />
+                  <span>Repositorio GitHub</span>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -966,6 +987,13 @@
     font-size: 13px;
     color: #a1a1aa;
     line-height: 1.5;
+  }
+
+  .about-actions-row {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   /* Updater Box */
