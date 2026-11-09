@@ -201,6 +201,15 @@ describe('systemSettings store', () => {
       async setMinimizeToTray() {
         throw new Error('cannot set tray');
       },
+      async isMinimizeOnCopy() {
+        throw new Error('fail');
+      },
+      async setMinimizeOnCopy() {
+        throw new Error('cannot set minimize on copy');
+      },
+      async minimizeWindow() {
+        throw new Error('cannot minimize window');
+      },
       async getGlobalShortcut() {
         throw new Error('fail shortcut');
       },
@@ -216,6 +225,12 @@ describe('systemSettings store', () => {
 
     const traySuccess = await setMinimizeToTraySetting(true, failingService);
     expect(traySuccess).toBe(false);
+
+    const copySuccess = await setMinimizeOnCopySetting(true, failingService);
+    expect(copySuccess).toBe(false);
+
+    const minSuccess = await triggerMinimizeWindow(failingService);
+    expect(minSuccess).toBe(false);
 
     const shortcutSuccess = await setGlobalShortcutSetting('Super+Control+Period', failingService);
     expect(shortcutSuccess).toBe(false);

@@ -8,9 +8,31 @@ import {
   resolveDefaultDimensions
 } from './sizes';
 
+const storage: Record<string, string> = {};
+const mockLocalStorage = {
+  getItem: (key: string) => storage[key] ?? null,
+  setItem: (key: string, value: string) => {
+    storage[key] = String(value);
+  },
+  removeItem: (key: string) => {
+    delete storage[key];
+  },
+  clear: () => {
+    for (const k in storage) {
+      delete storage[k];
+    }
+  }
+};
+
+Object.defineProperty(globalThis, 'localStorage', {
+  value: mockLocalStorage,
+  writable: true,
+  configurable: true
+});
+
 describe('sizes store - favorite resolution & presets', () => {
   beforeEach(() => {
-    localStorage.clear();
+    mockLocalStorage.clear();
     customSizes.set([]);
     setDefaultResolution('original');
   });

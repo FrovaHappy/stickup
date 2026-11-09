@@ -11,7 +11,7 @@
   import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
   import { toast } from '$lib/stores/toast';
   import { sortOption, sortEmotesList } from '$lib/stores/preferences';
-  import { toPascalCase } from '$lib/utils/format';
+  import { toPascalCase, isAnimatedEmote } from '$lib/utils/format';
 
   let selected: Emote | null = null;
   let searchQuery = '';
@@ -30,6 +30,12 @@
 
   async function handleEmoteCopy(emote: Emote) {
     if (selected) return;
+    const isGif = isAnimatedEmote(emote);
+    let resizingToastId: string | null = null;
+    if (isGif) {
+      resizingToastId = toast.info('Redimensionando...', 0);
+      await new Promise((r) => setTimeout(r, 20));
+    }
     try {
       const resolved = resolveDefaultDimensions(emote, $defaultResolution, $customSizes);
       await api.copyToClipboard(
@@ -39,12 +45,20 @@
         resolved.width,
         resolved.height
       );
+      if (resizingToastId) {
+        toast.dismiss(resizingToastId);
+        resizingToastId = null;
+      }
       toast.success(`✓ ¡Emote "${emote.name}" copiado (${resolved.label})!`);
       await loadEmotes();
       if ($minimizeOnCopyEnabled) {
         await api.minimizeWindow();
       }
     } catch (err: any) {
+      if (resizingToastId) {
+        toast.dismiss(resizingToastId);
+        resizingToastId = null;
+      }
       toast.error(`Error al copiar: ${err?.message || err}`);
     }
   }
@@ -55,6 +69,12 @@
     height: number,
     sizeLabel: string
   ) {
+    const isGif = isAnimatedEmote(emote);
+    let resizingToastId: string | null = null;
+    if (isGif) {
+      resizingToastId = toast.info('Redimensionando...', 0);
+      await new Promise((r) => setTimeout(r, 20));
+    }
     try {
       await api.copyToClipboard(
         emote.id,
@@ -63,12 +83,20 @@
         width,
         height
       );
+      if (resizingToastId) {
+        toast.dismiss(resizingToastId);
+        resizingToastId = null;
+      }
       toast.success(`✓ ¡"${emote.name}" copiado (${sizeLabel})!`);
       await loadEmotes();
       if ($minimizeOnCopyEnabled) {
         await api.minimizeWindow();
       }
     } catch (err: any) {
+      if (resizingToastId) {
+        toast.dismiss(resizingToastId);
+        resizingToastId = null;
+      }
       toast.error(`Error al copiar: ${err?.message || err}`);
     }
   }

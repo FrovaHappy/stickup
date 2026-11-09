@@ -229,6 +229,12 @@
 
   async function copyImageToClipboard() {
     if (!emote) return;
+    const isGif = isAnimatedEmote(emote) || selectedFormat === 'gif';
+    let resizingToastId: string | null = null;
+    if (isGif) {
+      resizingToastId = toast.info('Redimensionando...', 0);
+      await new Promise((r) => setTimeout(r, 20));
+    }
     copyButtonText = 'Copiando...';
 
     try {
@@ -245,6 +251,10 @@
       emote.copy_count = copyCount;
       await loadEmotes();
 
+      if (resizingToastId) {
+        toast.dismiss(resizingToastId);
+        resizingToastId = null;
+      }
       copyButtonText = '✓ ¡Copiado!';
       showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
       if ($minimizeOnCopyEnabled) {
@@ -254,6 +264,10 @@
         copyButtonText = 'Copy to Clipboard (Ctrl+C)';
       }, 2200);
     } catch (err: any) {
+      if (resizingToastId) {
+        toast.dismiss(resizingToastId);
+        resizingToastId = null;
+      }
       showToast(`Error: ${err?.message || err}`);
       copyButtonText = 'Copy to Clipboard (Ctrl+C)';
     }

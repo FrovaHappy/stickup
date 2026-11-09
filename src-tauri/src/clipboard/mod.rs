@@ -63,6 +63,11 @@ pub fn copy_emote(
     let req_format = format.to_lowercase();
     let needs_resize = target_width > 0 && target_height > 0;
     let is_animated_gif = orig_ext == "gif" && req_format == "gif";
+    let is_same_dimensions = if let Ok((w, h)) = image::image_dimensions(p) {
+        w == target_width && h == target_height
+    } else {
+        false
+    };
 
     let final_path: PathBuf;
     let raw_bytes: Vec<u8>;
@@ -70,7 +75,7 @@ pub fn copy_emote(
     #[cfg(windows)]
     let mut rgba_data: Option<(Vec<u8>, u32, u32)> = None;
 
-    if is_animated_gif && !needs_resize {
+    if is_animated_gif && (!needs_resize || is_same_dimensions) {
         final_path = p.to_path_buf();
         raw_bytes = fs::read(p).map_err(|e| e.to_string())?;
         final_format = "gif".to_string();
