@@ -187,7 +187,10 @@ pub fn run() {
             commands::set_global_shortcut,
             commands::scan_url,
             commands::scan_html,
-            commands::import_scanned_images
+            commands::import_scanned_images,
+            commands::open_external_url,
+            commands::download_update_asset,
+            commands::launch_installer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

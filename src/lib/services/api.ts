@@ -52,5 +52,11 @@ export const api = {
   scanHtml: (html: string, baseUrl?: string) =>
     invoke<ScannedImage[]>('scan_html', { html, baseUrl: baseUrl?.trim() || null }),
   importScannedImages: (items: ScannedImageImportRequest[]) =>
-    invoke<BatchImportResult>('import_scanned_images', { items })
+    invoke<BatchImportResult>('import_scanned_images', { items }),
+  openExternalUrl: (url: string) =>
+    invoke<void>('open_external_url', { url }),
+  downloadUpdateAsset: (url: string, filename: string) =>
+    invoke<string>('download_update_asset', { url, filename }),
+  launchInstaller: (filePath: string) =>
+    invoke<void>('launch_installer', { filePath })
 };

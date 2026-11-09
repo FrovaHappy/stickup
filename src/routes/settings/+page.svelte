@@ -9,11 +9,26 @@
     Monitor,
     Keyboard,
     RotateCcw,
-    Star
+    Star,
+    RefreshCw,
+    Sparkles,
+    Flame
   } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
   import { Button, Badge, Logo } from '$lib/components/system-ui';
+  import {
+    currentAppVersion,
+    loadCurrentAppVersion,
+    autoCheckUpdates,
+    setAutoCheck,
+    includePrereleases,
+    setIncludePrereleases,
+    isCheckingUpdates,
+    availableUpdate,
+    checkForUpdates,
+    openUpdateModal
+  } from '$lib/stores/updater';
   import {
     customSizes,
     addCustomSize,
@@ -46,6 +61,7 @@
 
   onMount(() => {
     loadSystemSettings();
+    loadCurrentAppVersion();
     window.addEventListener('keydown', handleKeydown, true);
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
@@ -478,11 +494,11 @@
       </div>
     </section>
 
-    <!-- Acerca de StickUp (Sin background de tarjeta) -->
+    <!-- Acerca de StickUp y Gestión de Versiones -->
     <section class="settings-section">
       <div class="section-title-row">
         <Info size={18} class="section-icon" />
-        <h2>Acerca de StickUp</h2>
+        <h2>Acerca de StickUp y Actualizaciones</h2>
       </div>
       <div class="section-card">
         <div class="about-card">
@@ -491,11 +507,98 @@
             <div class="about-info-col">
               <div class="about-title-row">
                 <strong>StickUp - Gestor de Emotes</strong>
-                <Badge variant="green" shape="pill">v0.1.1</Badge>
+                <Badge variant="green" shape="pill">v{$currentAppVersion}</Badge>
               </div>
               <p class="about-text">
                 Diseñado para copiar rápidamente stickers y emotes optimizados a cualquier aplicación de mensajería (Discord, Telegram, WhatsApp, Slack).
               </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel de Actualizaciones -->
+        <div class="updater-box">
+          <div class="updater-status-row">
+            <div class="updater-status-info">
+              {#if $availableUpdate?.hasUpdate}
+                <div class="status-alert-row">
+                  <span class="status-title text-orange">
+                    <Sparkles size={16} /> ¡Nueva versión v{$availableUpdate.latestVersion} disponible!
+                  </span>
+                  {#if $availableUpdate.isHot}
+                    <Badge variant="hot" shape="pill">
+                      <Flame size={12} /> Caliente (&lt; 24h)
+                    </Badge>
+                  {/if}
+                </div>
+                <p class="updater-status-desc">
+                  Hay una versión superior lista para instalar. Puedes actualizar en la app o descargar desde el navegador.
+                </p>
+              {:else}
+                <span class="status-title">StickUp está actualizado</span>
+                <p class="updater-status-desc">
+                  Tienes instalada la versión más reciente (v{$currentAppVersion}).
+                </p>
+              {/if}
+            </div>
+
+            <div class="updater-actions">
+              {#if $availableUpdate?.hasUpdate}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  on:click={openUpdateModal}
+                >
+                  <Sparkles size={14} /> Ver actualización
+                </Button>
+              {/if}
+
+              <Button
+                variant={$availableUpdate?.hasUpdate ? 'outline' : 'secondary'}
+                size="sm"
+                loading={$isCheckingUpdates}
+                disabled={$isCheckingUpdates}
+                on:click={() => checkForUpdates(true)}
+              >
+                <RefreshCw size={14} class={$isCheckingUpdates ? 'spin-icon' : ''} />
+                {$isCheckingUpdates ? 'Buscando...' : 'Buscar actualizaciones'}
+              </Button>
+            </div>
+          </div>
+
+          <div class="updater-toggles">
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Comprobar automáticamente al iniciar</span>
+                <p class="toggle-desc">
+                  Verifica una vez cada 24 horas si hay nuevas versiones publicadas en GitHub.
+                </p>
+              </div>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  checked={$autoCheckUpdates}
+                  on:change={(e) => setAutoCheck(e.currentTarget.checked)}
+                />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Incluir versiones preliminares (Pre-releases)</span>
+                <p class="toggle-desc">
+                  Propone versiones en desarrollo antes del lanzamiento público general.
+                </p>
+              </div>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  checked={$includePrereleases}
+                  on:change={(e) => setIncludePrereleases(e.currentTarget.checked)}
+                />
+                <span class="slider"></span>
+              </label>
             </div>
           </div>
         </div>
@@ -863,6 +966,89 @@
     font-size: 13px;
     color: #a1a1aa;
     line-height: 1.5;
+  }
+
+  /* Updater Box */
+  .updater-box {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .updater-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+
+  .updater-status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 240px;
+  }
+
+  .status-alert-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .status-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-primary, #f3f4f6);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-title.text-orange {
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .updater-status-desc {
+    margin: 0;
+    font-size: 12px;
+    color: #a1a1aa;
+    line-height: 1.4;
+  }
+
+  .updater-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .updater-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  :global(.spin-icon) {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Toggles del sistema */

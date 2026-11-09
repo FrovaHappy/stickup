@@ -1836,9 +1836,177 @@ pub fn import_scanned_images(
     })
 }
 
+fn sanitize_installer_filename(raw: &str) -> String {
+    let clean = raw.trim();
+    let name_only = std::path::Path::new(clean)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("StickUp-Installer.exe");
+
+    name_only
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect()
+}
+
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    let clean_url = url.trim();
+    if !clean_url.starts_with("https://") && !clean_url.starts_with("http://") {
+        return Err("Solo se permiten URLs seguras (http/https)".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", "start", "", clean_url]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.spawn().map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(clean_url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(clean_url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn download_update_asset(url: String, filename: String) -> Result<String, String> {
+    let clean_url = url.trim();
+    if !clean_url.starts_with("https://") && !clean_url.starts_with("http://") {
+        return Err("URL de descarga no válida".to_string());
+    }
+
+    let safe_filename = sanitize_installer_filename(&filename);
+    let downloads_dir = if cfg!(target_os = "windows") {
+        std::env::var("USERPROFILE")
+            .map(|p| std::path::PathBuf::from(p).join("Downloads"))
+            .ok()
+    } else {
+        std::env::var("HOME")
+            .map(|p| std::path::PathBuf::from(p).join("Downloads"))
+            .ok()
+    }
+    .unwrap_or_else(std::env::temp_dir);
+
+    if !downloads_dir.exists() {
+        let _ = fs::create_dir_all(&downloads_dir);
+    }
+
+    let dest = downloads_dir.join(&safe_filename);
+
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-L",
+        "-f",
+        "-s",
+        "-S",
+        "--connect-timeout",
+        "15",
+        "-o",
+    ]);
+    cmd.arg(&dest);
+    cmd.arg(clean_url);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Error ejecutando curl para la descarga: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Fallo en la descarga de la actualización: {}", err));
+    }
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn launch_installer(file_path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err("El archivo del instalador no existe en el disco".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", "start", "", &file_path]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.spawn().map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&file_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(&file_path, perms);
+            }
+        }
+
+        Command::new("xdg-open")
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sanitize_installer_filename() {
+        assert_eq!(
+            sanitize_installer_filename("../../malicious/setup.exe"),
+            "setup.exe"
+        );
+        assert_eq!(
+            sanitize_installer_filename("StickUp_v0.2.1-setup.exe"),
+            "StickUp_v0.2.1-setup.exe"
+        );
+        assert_eq!(
+            sanitize_installer_filename("setup;rm -rf"),
+            "setup_rm_-rf"
+        );
+    }
 
     #[test]
     fn test_extract_stem() {

@@ -1,11 +1,19 @@
 <script lang="ts">
   import "../global.css";
+  import { onMount } from "svelte";
   import { page } from "$app/stores";
   import { House, Settings, Plus, ScanSearch } from "@lucide/svelte";
   import { Logo, Toast } from "$lib/components/system-ui";
   import AddEmoteModal from "$lib/components/AddEmoteModal.svelte";
+  import UpdateModal from "$lib/components/UpdateModal.svelte";
+  import { checkForUpdates, availableUpdate } from "$lib/stores/updater";
 
   let addModalOpen = false;
+
+  onMount(() => {
+    // Comprobación periódica no invasiva al inicio (respetando margen estricto de 24h)
+    checkForUpdates(false);
+  });
 </script>
 
 <div class="app-layout">
@@ -46,12 +54,15 @@
 
       <a
         href="/settings"
-        class="nav-btn"
+        class="nav-btn nav-btn-relative"
         class:active={$page.url.pathname.startsWith("/settings")}
-        title="Configuración"
+        title={$availableUpdate?.hasUpdate ? "Configuración (Actualización disponible)" : "Configuración"}
         aria-label="Configuración"
       >
         <Settings size={22} strokeWidth={2.2} />
+        {#if $availableUpdate?.hasUpdate}
+          <span class="update-indicator-dot" class:hot={$availableUpdate.isHot}></span>
+        {/if}
       </a>
 
       <div class="brand-badge" title="StickUp - Gestor de Emotes">
@@ -65,6 +76,7 @@
   </main>
 
   <AddEmoteModal bind:isOpen={addModalOpen} customTrigger />
+  <UpdateModal />
   <Toast />
 </div>
 
@@ -118,6 +130,38 @@
   .nav-btn:hover {
     color: var(--color-text-main);
     background: var(--color-bg-hover);
+  }
+
+  .nav-btn-relative {
+    position: relative;
+  }
+
+  .update-indicator-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--color-orange-primary, #f97316);
+    box-shadow: 0 0 6px var(--color-orange-primary, #f97316);
+  }
+
+  .update-indicator-dot.hot {
+    background-color: #ef4444;
+    box-shadow: 0 0 8px #ef4444;
+    animation: pulse-hot 1.5s infinite;
+  }
+
+  @keyframes pulse-hot {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.75;
+      transform: scale(1.25);
+    }
   }
 
   .nav-btn.active {
