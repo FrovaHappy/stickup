@@ -2063,6 +2063,283 @@ pub fn launch_installer(file_path: String) -> Result<(), String> {
     Ok(())
 }
 
+fn get_models_directory(app: &tauri::AppHandle) -> PathBuf {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| crate::db::get_active_db_dir())
+        .join("models")
+}
+
+#[tauri::command]
+pub fn get_bg_model_presets(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::services::bg_removal::ModelPresetInfo>, String> {
+    let conn = ensure_db()?;
+    let active_id = crate::db::get_ai_bg_model(&conn);
+    let models_dir = get_models_directory(&app);
+    Ok(crate::services::bg_removal::get_presets_status(&models_dir, &active_id))
+}
+
+#[tauri::command]
+pub fn set_active_bg_model(
+    app: tauri::AppHandle,
+    model_id: String,
+) -> Result<crate::services::bg_removal::ModelStatus, String> {
+    let conn = ensure_db()?;
+    let clean_id = model_id.trim();
+    if crate::services::bg_removal::find_preset(clean_id).is_none() {
+        return Err(format!("Modelo desconocido: {}", clean_id));
+    }
+    crate::db::set_ai_bg_model(&conn, clean_id)?;
+    crate::services::bg_removal::clear_session_cache();
+    let models_dir = get_models_directory(&app);
+    Ok(crate::services::bg_removal::get_model_status_in_dir(&models_dir, clean_id))
+}
+
+#[tauri::command]
+pub fn get_bg_model_status(
+    app: tauri::AppHandle,
+) -> Result<crate::services::bg_removal::ModelStatus, String> {
+    let conn = ensure_db()?;
+    let active_id = crate::db::get_ai_bg_model(&conn);
+    let models_dir = get_models_directory(&app);
+    Ok(crate::services::bg_removal::get_model_status_in_dir(&models_dir, &active_id))
+}
+
+#[tauri::command]
+pub async fn download_bg_model(
+    app: tauri::AppHandle,
+    model_id: Option<String>,
+) -> Result<crate::services::bg_removal::ModelStatus, String> {
+    use tauri::Emitter;
+    let conn = ensure_db()?;
+    let target_id = model_id.unwrap_or_else(|| crate::db::get_ai_bg_model(&conn));
+    let models_dir = get_models_directory(&app);
+    let app_clone = app.clone();
+
+    crate::services::bg_removal::download_model_with_progress(
+        &models_dir,
+        &target_id,
+        move |progress| {
+            let _ = app_clone.emit("bg-model-download-progress", progress);
+        },
+    )
+    .await?;
+
+    Ok(crate::services::bg_removal::get_model_status_in_dir(&models_dir, &target_id))
+}
+
+#[tauri::command]
+pub fn delete_bg_model(
+    app: tauri::AppHandle,
+    model_id: Option<String>,
+) -> Result<crate::services::bg_removal::ModelStatus, String> {
+    let conn = ensure_db()?;
+    let target_id = model_id.unwrap_or_else(|| crate::db::get_ai_bg_model(&conn));
+    let models_dir = get_models_directory(&app);
+    crate::services::bg_removal::clear_session_cache();
+    crate::services::bg_removal::delete_model_preset_in_dir(&models_dir, &target_id)?;
+    Ok(crate::services::bg_removal::get_model_status_in_dir(&models_dir, &target_id))
+}
+
+#[tauri::command]
+pub fn get_bg_model_idle_timeout() -> Result<u64, String> {
+    let conn = ensure_db()?;
+    let timeout = crate::db::get_ai_bg_idle_timeout(&conn);
+    crate::services::bg_removal::set_idle_timeout_secs(timeout);
+    Ok(timeout)
+}
+
+#[tauri::command]
+pub fn set_bg_model_idle_timeout(timeout_secs: u64) -> Result<(), String> {
+    let conn = ensure_db()?;
+    crate::db::set_ai_bg_idle_timeout(&conn, timeout_secs)?;
+    crate::services::bg_removal::set_idle_timeout_secs(timeout_secs);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unload_bg_model_session() -> Result<bool, String> {
+    let was_cached = crate::services::bg_removal::is_session_cached();
+    crate::services::bg_removal::clear_session_cache();
+    Ok(was_cached)
+}
+
+#[tauri::command]
+pub fn is_bg_model_loaded_in_ram() -> Result<bool, String> {
+    Ok(crate::services::bg_removal::is_session_cached())
+}
+
+#[tauri::command]
+pub fn preview_remove_background(
+    app: tauri::AppHandle,
+    image_path: String,
+    temperature: Option<f32>,
+    model_id: Option<String>,
+) -> Result<String, String> {
+    let conn = ensure_db()?;
+    let active_id = model_id.unwrap_or_else(|| crate::db::get_ai_bg_model(&conn));
+    let models_dir = get_models_directory(&app);
+    let status = crate::services::bg_removal::get_model_status_in_dir(&models_dir, &active_id);
+    if !status.is_downloaded {
+        return Err("El modelo de IA para eliminar fondo no está instalado.".to_string());
+    }
+
+    let model_path = PathBuf::from(&status.model_path);
+    let clean_path = clean_path_str(&image_path);
+    let img = image::open(&clean_path).map_err(|e| format!("Error al abrir la imagen: {}", e))?;
+
+    let rgba_res = crate::services::bg_removal::remove_background(
+        &img,
+        &model_path,
+        &active_id,
+        temperature,
+    )?;
+
+    let mut buffer = Vec::new();
+    let mut cursor = Cursor::new(&mut buffer);
+    rgba_res
+        .write_to(&mut cursor, ImageFormat::Png)
+        .map_err(|e| format!("Error al codificar imagen: {}", e))?;
+
+    let b64 = encode_base64(&buffer);
+    Ok(format!("data:image/png;base64,{}", b64))
+}
+
+#[tauri::command]
+pub fn apply_remove_background(
+    app: tauri::AppHandle,
+    emote_id: i64,
+    as_copy: bool,
+    temperature: Option<f32>,
+    model_id: Option<String>,
+) -> Result<crate::models::Emote, String> {
+    let conn = ensure_db()?;
+    let active_id = model_id.unwrap_or_else(|| crate::db::get_ai_bg_model(&conn));
+    let models_dir = get_models_directory(&app);
+    let status = crate::services::bg_removal::get_model_status_in_dir(&models_dir, &active_id);
+    if !status.is_downloaded {
+        return Err("El modelo de IA para eliminar fondo no está instalado.".to_string());
+    }
+
+    let model_path = PathBuf::from(&status.model_path);
+
+    let (orig_name, orig_tag, orig_path, copy_count, interaction_count, last_used_at): (
+        String,
+        Option<String>,
+        String,
+        i64,
+        i64,
+        Option<String>,
+    ) = conn
+        .query_row(
+            "SELECT name, tag, path, copy_count, interaction_count, last_used_at FROM emotes WHERE id = ?1",
+            params![emote_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .map_err(|e| format!("Emote no encontrado: {}", e))?;
+
+    let clean_src = clean_path_str(&orig_path);
+    let src_path = PathBuf::from(&clean_src);
+    if !src_path.exists() {
+        return Err(format!("El archivo de origen no existe: {}", clean_src));
+    }
+
+    let img = image::open(&src_path).map_err(|e| format!("Error al abrir imagen: {}", e))?;
+    let rgba_res = crate::services::bg_removal::remove_background(
+        &img,
+        &model_path,
+        &active_id,
+        temperature,
+    )?;
+    let (w, h) = (rgba_res.width() as i32, rgba_res.height() as i32);
+
+    let now = chrono::Local::now().to_rfc3339();
+    let emotes_dir = get_active_emotes_dir(&conn);
+
+    if as_copy {
+        let new_name = format!("{} NoBG", orig_name);
+        let file_stem = extract_stem(&src_path);
+        let new_filename = format!("{}_nobg_{}.png", file_stem, uuid::Uuid::new_v4());
+        let target_path = emotes_dir.join(&new_filename);
+
+        rgba_res
+            .save_with_format(&target_path, ImageFormat::Png)
+            .map_err(|e| format!("Error al guardar la nueva imagen: {}", e))?;
+
+        let norm_target = normalize_path(&target_path);
+
+        conn.execute(
+            "INSERT INTO emotes (name, tag, path, original_width, original_height, format, created_at, copy_count, interaction_count) VALUES (?1, ?2, ?3, ?4, ?5, 'png', ?6, 0, 0)",
+            params![new_name, orig_tag, norm_target, w, h, now],
+        ).map_err(|e| format!("Error al insertar en BD: {}", e))?;
+
+        let new_id = conn.last_insert_rowid();
+        let file_size = fs::metadata(&target_path).ok().map(|m| m.len());
+
+        Ok(crate::models::Emote {
+            id: new_id,
+            name: new_name,
+            tag: orig_tag,
+            path: norm_target,
+            original_width: w,
+            original_height: h,
+            format: "png".to_string(),
+            created_at: now,
+            file_size,
+            copy_count: 0,
+            interaction_count: 0,
+            last_used_at: None,
+        })
+    } else {
+        let target_path = if src_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("png"))
+            .unwrap_or(false)
+        {
+            src_path.clone()
+        } else {
+            let file_stem = extract_stem(&src_path);
+            let new_target = src_path
+                .parent()
+                .unwrap_or(&emotes_dir)
+                .join(format!("{}.png", file_stem));
+            let _ = fs::remove_file(&src_path);
+            new_target
+        };
+
+        rgba_res
+            .save_with_format(&target_path, ImageFormat::Png)
+            .map_err(|e| format!("Error al sobrescribir la imagen: {}", e))?;
+
+        let norm_target = normalize_path(&target_path);
+
+        conn.execute(
+            "UPDATE emotes SET path = ?1, original_width = ?2, original_height = ?3, format = 'png' WHERE id = ?4",
+            params![norm_target, w, h, emote_id],
+        ).map_err(|e| format!("Error al actualizar emote en BD: {}", e))?;
+
+        let file_size = fs::metadata(&target_path).ok().map(|m| m.len());
+
+        Ok(crate::models::Emote {
+            id: emote_id,
+            name: orig_name,
+            tag: orig_tag,
+            path: norm_target,
+            original_width: w,
+            original_height: h,
+            format: "png".to_string(),
+            created_at: now,
+            file_size,
+            copy_count,
+            interaction_count,
+            last_used_at,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

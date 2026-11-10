@@ -195,7 +195,18 @@ pub fn run() {
             commands::import_scanned_images,
             commands::open_external_url,
             commands::download_update_asset,
-            commands::launch_installer
+            commands::launch_installer,
+            commands::get_bg_model_presets,
+            commands::set_active_bg_model,
+            commands::get_bg_model_status,
+            commands::download_bg_model,
+            commands::delete_bg_model,
+            commands::get_bg_model_idle_timeout,
+            commands::set_bg_model_idle_timeout,
+            commands::unload_bg_model_session,
+            commands::is_bg_model_loaded_in_ram,
+            commands::preview_remove_background,
+            commands::apply_remove_background
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

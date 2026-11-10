@@ -341,6 +341,48 @@ pub fn set_global_shortcut(conn: &Connection, shortcut: &str) -> Result<(), Stri
     Ok(())
 }
 
+pub const DEFAULT_AI_BG_MODEL: &str = "birefnet_lite";
+pub const DEFAULT_AI_BG_IDLE_TIMEOUT: u64 = 60; // 1 minuto (60 segundos) por defecto
+
+pub fn get_ai_bg_model(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'ai_bg_model'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap_or_else(|_| DEFAULT_AI_BG_MODEL.to_string())
+}
+
+pub fn set_ai_bg_model(conn: &Connection, model: &str) -> Result<(), String> {
+    let val = model.trim();
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_bg_model', ?1)",
+        params![val],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_ai_bg_idle_timeout(conn: &Connection) -> u64 {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'ai_bg_idle_timeout'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|val| val.parse::<u64>().ok())
+    .unwrap_or(DEFAULT_AI_BG_IDLE_TIMEOUT)
+}
+
+pub fn set_ai_bg_idle_timeout(conn: &Connection, timeout_secs: u64) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('ai_bg_idle_timeout', ?1)",
+        params![timeout_secs.to_string()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn check_and_backup_version_in_dir(
     conn: &Connection,
     current_version: &str,
@@ -918,5 +960,37 @@ mod tests {
         assert!(txt_file.exists());
 
         let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_get_and_set_ai_bg_model() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+        )
+        .unwrap();
+
+        assert_eq!(get_ai_bg_model(&conn), DEFAULT_AI_BG_MODEL);
+
+        set_ai_bg_model(&conn, "rmbg14_full").unwrap();
+        assert_eq!(get_ai_bg_model(&conn), "rmbg14_full");
+    }
+
+    #[test]
+    fn test_get_and_set_ai_bg_idle_timeout() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(get_ai_bg_idle_timeout(&conn), DEFAULT_AI_BG_IDLE_TIMEOUT);
+
+        set_ai_bg_idle_timeout(&conn, 60).unwrap();
+        assert_eq!(get_ai_bg_idle_timeout(&conn), 60);
+
+        set_ai_bg_idle_timeout(&conn, 0).unwrap();
+        assert_eq!(get_ai_bg_idle_timeout(&conn), 0);
     }
 }

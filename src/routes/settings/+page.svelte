@@ -13,7 +13,13 @@
     RefreshCw,
     Sparkles,
     Flame,
-    ExternalLink
+    ExternalLink,
+    Wand2,
+    Trash2,
+    Download,
+    Check,
+    Cpu,
+    ZapOff
   } from '@lucide/svelte';
   import StorageSettings from '$lib/components/StorageSettings.svelte';
   import ImportButton from '$lib/components/ImportButton.svelte';
@@ -58,6 +64,25 @@
     setGlobalShortcutSetting,
     formatShortcutKeys
   } from '$lib/stores/systemSettings';
+  import {
+    bgModelStatus,
+    modelPresets,
+    activeModelId,
+    isDownloadingModel,
+    downloadProgress,
+    checkBgModelStatus,
+    loadModelPresets,
+    setActiveModel,
+    downloadBgModel,
+    deleteBgModel,
+    formatBytes,
+    idleTimeoutSecs,
+    isModelLoadedInRam,
+    loadIdleTimeout,
+    setIdleTimeout,
+    checkModelLoadedInRam,
+    unloadModelSession
+  } from '$lib/stores/bgRemoval';
 
   let newSizeWidth: number | null = null;
   let newSizeHeight: number | null = null;
@@ -74,6 +99,10 @@
   onMount(() => {
     loadSystemSettings();
     loadCurrentAppVersion();
+    checkBgModelStatus();
+    loadModelPresets();
+    loadIdleTimeout();
+    checkModelLoadedInRam();
     window.addEventListener('keydown', handleKeydown, true);
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
@@ -412,6 +441,184 @@
           </div>
           <div class="sync-action">
             <ImportButton />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sección de Inteligencia Artificial / Recorte de Fondo -->
+    <section class="settings-section">
+      <div class="section-title-row">
+        <Wand2 size={18} class="section-icon" />
+        <h2>Inteligencia Artificial y Recorte de Fondo</h2>
+      </div>
+      <div class="section-card">
+        <p class="section-desc">
+          Elige el modelo neuronal utilizado para eliminar fondos de imágenes estáticas 100% de forma local en tu equipo.
+        </p>
+
+        {#if $isDownloadingModel}
+          <div class="download-progress-container mb-4">
+            <div class="progress-info-row">
+              <span class="progress-text">Descargando modelo desde Hugging Face...</span>
+              <span class="progress-percent">
+                {$downloadProgress?.percentage ? `${Math.round($downloadProgress.percentage)}%` : '0%'}
+              </span>
+            </div>
+            <div class="progress-bar-bg">
+              <div
+                class="progress-bar-fill"
+                style="width: {$downloadProgress?.percentage || 0}%;"
+              ></div>
+            </div>
+            <div class="progress-bytes-row">
+              <span class="bytes-text">
+                {formatBytes($downloadProgress?.downloaded_bytes || 0)} /
+                {$downloadProgress?.total_bytes ? formatBytes($downloadProgress.total_bytes) : 'Procesando...'}
+              </span>
+            </div>
+          </div>
+        {/if}
+
+        <div class="model-presets-list">
+          {#each $modelPresets as preset}
+            {@const isActive = preset.id === $activeModelId}
+            <div class="preset-card" class:active={isActive}>
+              <div class="preset-card-header">
+                <div class="preset-title-wrap">
+                  <span class="preset-name">{preset.name}</span>
+                  <div class="preset-badges">
+                    {#if isActive}
+                      <Badge variant="amber">Activo</Badge>
+                    {/if}
+                    {#if preset.is_downloaded}
+                      <Badge variant="green">Instalado ({formatBytes(preset.file_size_bytes)})</Badge>
+                    {:else}
+                      <Badge variant="gray">~{preset.approx_size_mb} MB</Badge>
+                    {/if}
+                  </div>
+                </div>
+
+                <div class="preset-actions">
+                  {#if !isActive}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      on:click={() => setActiveModel(preset.id)}
+                      title="Establecer este modelo como el predeterminado para recortes"
+                    >
+                      <Check size={13} />
+                      <span>Seleccionar</span>
+                    </Button>
+                  {/if}
+
+                  {#if !preset.is_downloaded}
+                    <Button
+                      variant={isActive ? 'primary' : 'secondary'}
+                      size="sm"
+                      disabled={$isDownloadingModel}
+                      on:click={() => downloadBgModel(preset.id)}
+                      title={`Descargar ${preset.name} (~${preset.approx_size_mb} MB)`}
+                    >
+                      <Download size={13} />
+                      <span>Descargar</span>
+                    </Button>
+                  {:else}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={$isDownloadingModel}
+                      on:click={() => deleteBgModel(preset.id)}
+                      title="Eliminar este archivo para liberar espacio en disco"
+                    >
+                      <Trash2 size={13} />
+                      <span>Liberar</span>
+                    </Button>
+                  {/if}
+                </div>
+              </div>
+
+              <p class="preset-desc">{preset.description}</p>
+            </div>
+          {/each}
+        </div>
+
+        <!-- Gestión de Memoria RAM e Inactividad -->
+        <div class="ai-ram-management-box">
+          <div class="ram-management-header">
+            <div class="ram-title-group">
+              <Cpu size={16} class="text-orange" />
+              <span class="ram-management-title">Memoria RAM y Tiempo de Espera</span>
+              {#if $isModelLoadedInRam}
+                <Badge variant="amber">En RAM activa</Badge>
+              {:else}
+                <Badge variant="gray">Inactivo (0 MB en RAM)</Badge>
+              {/if}
+            </div>
+
+            {#if $isModelLoadedInRam}
+              <Button
+                variant="secondary"
+                size="sm"
+                on:click={unloadModelSession}
+                title="Descargar el modelo de la memoria RAM inmediatamente"
+              >
+                <ZapOff size={13} />
+                <span>Liberar memoria ahora</span>
+              </Button>
+            {/if}
+          </div>
+
+          <p class="ram-management-desc">
+            Define cuánto tiempo se mantiene el modelo cargado en memoria RAM tras un recorte para acelerar futuros recortes, o selecciona <strong>Instantáneo</strong> para liberar toda la memoria inmediatamente al terminar la inferencia.
+          </p>
+
+          <div class="timeout-options-row">
+            <button
+              type="button"
+              class="timeout-btn"
+              class:active={$idleTimeoutSecs === 0}
+              on:click={() => setIdleTimeout(0)}
+              title="Descargar de la memoria RAM inmediatamente tras cada recorte (0 segundos)"
+            >
+              Instantáneo
+            </button>
+            <button
+              type="button"
+              class="timeout-btn"
+              class:active={$idleTimeoutSecs === 60}
+              on:click={() => setIdleTimeout(60)}
+              title="Descargar tras 1 minuto de inactividad (Por defecto)"
+            >
+              1 minuto (Por defecto)
+            </button>
+            <button
+              type="button"
+              class="timeout-btn"
+              class:active={$idleTimeoutSecs === 300}
+              on:click={() => setIdleTimeout(300)}
+              title="Descargar tras 5 minutos de inactividad"
+            >
+              5 minutos
+            </button>
+            <button
+              type="button"
+              class="timeout-btn"
+              class:active={$idleTimeoutSecs === 600}
+              on:click={() => setIdleTimeout(600)}
+              title="Descargar tras 10 minutos de inactividad"
+            >
+              10 minutos
+            </button>
+            <button
+              type="button"
+              class="timeout-btn"
+              class:active={$idleTimeoutSecs === 1800}
+              on:click={() => setIdleTimeout(1800)}
+              title="Descargar tras 30 minutos de inactividad"
+            >
+              30 minutos
+            </button>
           </div>
         </div>
       </div>
@@ -1279,5 +1486,185 @@
       opacity: 0.3;
       transform: scale(0.8);
     }
+  }
+
+  .model-presets-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .preset-card {
+    background: transparent;
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s ease;
+  }
+
+  .preset-card.active {
+    border-color: rgba(249, 115, 22, 0.4);
+    background: rgba(249, 115, 22, 0.03);
+  }
+
+  .preset-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .preset-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .preset-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .preset-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .preset-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .preset-desc {
+    margin: 0;
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.65);
+    line-height: 1.4;
+  }
+
+  .download-progress-container {
+    margin-top: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    padding: 12px;
+    border-radius: 8px;
+  }
+
+  .download-progress-container.mb-4 {
+    margin-bottom: 14px;
+  }
+
+  .progress-info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    margin-bottom: 6px;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .progress-percent {
+    font-weight: 600;
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .progress-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--color-orange-primary, #f97316);
+    transition: width 0.2s ease;
+  }
+
+  .progress-bytes-row {
+    margin-top: 4px;
+    text-align: right;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .ai-ram-management-box {
+    margin-top: 14px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ram-management-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ram-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .ram-management-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .ram-management-desc {
+    margin: 0;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.4;
+  }
+
+  .timeout-options-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    width: fit-content;
+  }
+
+  .timeout-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .timeout-btn:hover {
+    color: #ffffff;
+  }
+
+  .timeout-btn.active {
+    background: rgba(249, 115, 22, 0.2);
+    color: #ffffff;
+    font-weight: 500;
   }
 </style>

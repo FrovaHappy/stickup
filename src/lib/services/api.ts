@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ClipboardInspectResult, Emote, GifLoopStatus, ResyncStats } from '$lib/types/emote';
 import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
 import type { ScannedImage, RawScannedItem, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
+import type { BgModelStatus, ModelPresetInfo } from '$lib/types/bgRemoval';
 
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
@@ -67,5 +68,31 @@ export const api = {
   downloadUpdateAsset: (url: string, filename: string) =>
     invoke<string>('download_update_asset', { url, filename }),
   launchInstaller: (filePath: string) =>
-    invoke<void>('launch_installer', { filePath })
+    invoke<void>('launch_installer', { filePath }),
+  getBgModelPresets: () => invoke<ModelPresetInfo[]>('get_bg_model_presets'),
+  setActiveBgModel: (modelId: string) =>
+    invoke<BgModelStatus>('set_active_bg_model', { modelId }),
+  getBgModelStatus: () => invoke<BgModelStatus>('get_bg_model_status'),
+  downloadBgModel: (modelId?: string) =>
+    invoke<BgModelStatus>('download_bg_model', { modelId: modelId || null }),
+  deleteBgModel: (modelId?: string) =>
+    invoke<BgModelStatus>('delete_bg_model', { modelId: modelId || null }),
+  getBgModelIdleTimeout: () => invoke<number>('get_bg_model_idle_timeout'),
+  setBgModelIdleTimeout: (timeoutSecs: number) =>
+    invoke<void>('set_bg_model_idle_timeout', { timeoutSecs }),
+  unloadBgModelSession: () => invoke<boolean>('unload_bg_model_session'),
+  isBgModelLoadedInRam: () => invoke<boolean>('is_bg_model_loaded_in_ram'),
+  previewRemoveBackground: (imagePath: string, temperature?: number, modelId?: string) =>
+    invoke<string>('preview_remove_background', {
+      imagePath,
+      temperature: temperature !== undefined ? temperature : null,
+      modelId: modelId || null
+    }),
+  applyRemoveBackground: (emoteId: number, asCopy: boolean, temperature?: number, modelId?: string) =>
+    invoke<Emote>('apply_remove_background', {
+      emoteId,
+      asCopy,
+      temperature: temperature !== undefined ? temperature : null,
+      modelId: modelId || null
+    })
 };

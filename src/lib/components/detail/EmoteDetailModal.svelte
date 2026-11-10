@@ -12,7 +12,8 @@
     Sparkles,
     MousePointerClick,
     AlertCircle,
-    RotateCcw
+    RotateCcw,
+    Wand2
   } from '@lucide/svelte';
   import type { Emote, GifLoopStatus } from '$lib/types/emote';
   import { api } from '$lib/services/api';
@@ -45,6 +46,7 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import TagManager from './TagManager.svelte';
   import DeleteEmoteModal from '../DeleteEmoteModal.svelte';
+  import RemoveBgModal from './RemoveBgModal.svelte';
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
@@ -69,6 +71,7 @@
   let customSizeError = '';
   let nameError = '';
   let showDeleteConfirm = false;
+  let showRemoveBgModal = false;
 
   let gifLoopStatus: GifLoopStatus | null = null;
   let isUpdatingLoop = false;
@@ -183,12 +186,13 @@
 
   function checkNameOccupied(candidate: string): boolean {
     if (!emote) return false;
+    const currentId = emote.id;
     const clean = toPascalCase(candidate.trim());
     if (!clean || clean.toLowerCase() === (emote.name ?? '').toLowerCase()) {
       return false;
     }
     return $emotes.some(
-      (e) => e.id !== emote.id && (e.name ?? '').toLowerCase() === clean.toLowerCase()
+      (e) => e.id !== currentId && (e.name ?? '').toLowerCase() === clean.toLowerCase()
     );
   }
 
@@ -654,6 +658,16 @@
     </div>
 
     <svelte:fragment slot="footer">
+      {#if !isAnimated}
+        <Button
+          variant="secondary"
+          size="sm"
+          on:click={() => (showRemoveBgModal = true)}
+          title="Eliminar fondo de la imagen usando IA local"
+        >
+          <Wand2 size={14} /> Quitar fondo
+        </Button>
+      {/if}
       <Button variant="outline" size="sm" on:click={downloadResizedImage}>
         <Download size={14} /> Descargar copia
       </Button>
@@ -676,6 +690,19 @@
     onDeleted={() => {
       showDeleteConfirm = false;
       onClose();
+    }}
+  />
+{/if}
+
+{#if showRemoveBgModal && emote}
+  <RemoveBgModal
+    {emote}
+    open={true}
+    onClose={() => (showRemoveBgModal = false)}
+    onApplied={(updated) => {
+      emote = updated;
+      showRemoveBgModal = false;
+      previewCacheBuster += 1;
     }}
   />
 {/if}
