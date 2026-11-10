@@ -1,6 +1,8 @@
 # Unreleased
 
 ### Added
+- **Eliminación de fondo en GIFs animados con IA**: Procesamiento secuencial fotograma a fotograma con reporte de progreso (`bg-gif-progress`), preservación de tiempos y bucle infinito.
+- **Previsualización ágil de GIFs**: Visor instantáneo Before/After en el primer fotograma antes de procesar la animación completa.
 - **Eliminación de fondo con IA local**: Inferencia nativa bajo demanda con BiRefNet Lite por defecto y previsualización interactiva.
 - **Control de memoria RAM de IA en Ajustes**: Selector de tiempo de inactividad (Instantáneo, 1m, 5m, 10m, 30m) y botón para descargar el modelo de la memoria de inmediato.
 - **Optimizador de arena de memoria ONNX**: Prevención de retención masiva de RAM en CPU (`kSameAsRequested` y sin memory pattern fijo).
@@ -16,4 +18,4 @@
 - **Copiado de GIFs**: Respeta repeticiones finitas configuradas al redimensionar en portapapeles.
 
 ### Fixed
-- 
+- **Ciclo de vida del runtime ONNX**: Corrección del error `only one environment is allowed per process` al liberar memoria manteniendo `OrtEnv` global mediante `OnceLock`. 

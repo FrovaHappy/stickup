@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     Wand2,
     Download,
@@ -9,9 +10,12 @@
     RefreshCw,
     Sliders,
     RotateCcw,
-    ChevronsLeftRight
+    ChevronsLeftRight,
+    Film
   } from '@lucide/svelte';
   import type { Emote } from '$lib/types/emote';
+  import type { BgGifProgress } from '$lib/types/bgRemoval';
+  import { isAnimatedEmote } from '$lib/utils/format';
   import { api } from '$lib/services/api';
   import { loadEmotes } from '$lib/stores/emotes';
   import { toast } from '$lib/stores/toast';
@@ -43,7 +47,10 @@
   let isApplying = false;
   let temperature = 1.0;
   let tempDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
+  let gifProgress: BgGifProgress | null = null;
+  let unlistenGifProgress: UnlistenFn | null = null;
 
+  $: isGif = isAnimatedEmote(emote);
   $: currentPreset = $modelPresets.find((p) => p.id === $activeModelId) || $modelPresets[0] || null;
 
   onMount(async () => {
@@ -51,6 +58,13 @@
     await loadModelPresets();
     if ($bgModelStatus?.is_downloaded) {
       await generatePreview();
+    }
+  });
+
+  onDestroy(() => {
+    if (unlistenGifProgress) {
+      unlistenGifProgress();
+      unlistenGifProgress = null;
     }
   });
 
@@ -125,6 +139,18 @@
   async function handleApply(asCopy: boolean) {
     if (!emote || isApplying) return;
     isApplying = true;
+    gifProgress = null;
+
+    if (isGif && !unlistenGifProgress) {
+      try {
+        unlistenGifProgress = await listen<BgGifProgress>('bg-gif-progress', (event) => {
+          gifProgress = event.payload;
+        });
+      } catch (e) {
+        console.error('Error al escuchar progreso de GIF:', e);
+      }
+    }
+
     try {
       const updated = await api.applyRemoveBackground(emote.id, asCopy, temperature, $activeModelId);
       await loadEmotes();
@@ -136,6 +162,11 @@
       toast.error(msg);
     } finally {
       isApplying = false;
+      gifProgress = null;
+      if (unlistenGifProgress) {
+        unlistenGifProgress();
+        unlistenGifProgress = null;
+      }
     }
   }
 </script>
@@ -217,6 +248,45 @@
     {:else if previewDataUrl}
       <!-- Estado 4: Previsualización lista con comparador superpuesto -->
       <div class="preview-layout">
+        {#if isApplying}
+          <div class="applying-overlay" role="status" aria-live="polite">
+            <div class="spinner-circle">
+              <RefreshCw size={28} class="spin-icon text-orange" />
+            </div>
+            {#if isGif}
+              <h4 class="applying-title">Eliminando fondo del GIF animado...</h4>
+              <p class="applying-subtitle">
+                Procesando fotograma a fotograma con IA y preservando la animación continua.
+              </p>
+              <div class="gif-progress-card">
+                <div class="gif-progress-header">
+                  <span class="gif-frames-text">
+                    {#if gifProgress && gifProgress.total_frames > 0}
+                      Fotograma {gifProgress.current_frame} de {gifProgress.total_frames}
+                    {:else}
+                      Preparando fotogramas...
+                    {/if}
+                  </span>
+                  <span class="gif-percent-text">
+                    {gifProgress ? `${Math.round(gifProgress.percentage)}%` : '0%'}
+                  </span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div
+                    class="progress-bar-fill"
+                    style="width: {gifProgress?.percentage || 0}%;"
+                  ></div>
+                </div>
+              </div>
+            {:else}
+              <h4 class="applying-title">Aplicando recorte con IA...</h4>
+              <p class="applying-subtitle">
+                Guardando el nuevo emote con canal alfa transparente.
+              </p>
+            {/if}
+          </div>
+        {/if}
+
         <!-- Visor superpuesto Before / After con cortina clip-path -->
         <div
           class="comparison-container"
@@ -308,13 +378,28 @@
         </div>
 
         <div class="preview-info-strip">
-          <span class="info-badge">
-            <Check size={12} class="text-orange" /> {currentPreset ? currentPreset.name.split(' (')[0] : 'IA'} (PNG transparente)
-          </span>
+          {#if isGif}
+            <span class="info-badge">
+              <Film size={12} class="text-orange" /> GIF Animado (Frame 1 en visor)
+            </span>
+          {:else}
+            <span class="info-badge">
+              <Check size={12} class="text-orange" /> {currentPreset ? currentPreset.name.split(' (')[0] : 'IA'} (PNG transparente)
+            </span>
+          {/if}
           <span class="info-badge">
             {emote.original_width}×{emote.original_height} px
           </span>
         </div>
+
+        {#if isGif}
+          <div class="gif-hint-box">
+            <Film size={14} class="text-orange flex-shrink-0" />
+            <span>
+              Previsualización instantánea del primer fotograma. Al aplicar, la IA procesará la secuencia completa manteniendo el bucle infinito.
+            </span>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -484,9 +569,83 @@
   }
 
   .preview-layout {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .applying-overlay {
+    position: absolute;
+    inset: -6px;
+    z-index: 20;
+    background: rgba(22, 22, 25, 0.92);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 20px;
+    text-align: center;
+  }
+
+  .applying-title {
+    margin: 0 0 6px 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .applying-subtitle {
+    margin: 0 0 16px 0;
+    font-size: 0.83rem;
+    color: rgba(255, 255, 255, 0.65);
+    max-width: 400px;
+    line-height: 1.4;
+  }
+
+  .gif-progress-card {
+    width: 100%;
+    max-width: 360px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .gif-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+  }
+
+  .gif-frames-text {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+  }
+
+  .gif-percent-text {
+    font-weight: 700;
+    font-family: monospace;
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .gif-hint-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(249, 115, 22, 0.08);
+    border: 1px solid rgba(249, 115, 22, 0.2);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
   }
 
   /* Contenedor principal de comparación superpuesta */

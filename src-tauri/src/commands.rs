@@ -2188,7 +2188,15 @@ pub fn preview_remove_background(
 
     let model_path = PathBuf::from(&status.model_path);
     let clean_path = clean_path_str(&image_path);
-    let img = image::open(&clean_path).map_err(|e| format!("Error al abrir la imagen: {}", e))?;
+    let is_gif = clean_path.to_lowercase().ends_with(".gif");
+    let img = if is_gif {
+        let file_bytes = fs::read(&clean_path)
+            .map_err(|e| format!("Error al leer archivo GIF: {}", e))?;
+        crate::services::bg_removal::extract_first_frame_from_gif(&file_bytes)
+            .or_else(|_| image::open(&clean_path).map_err(|e| format!("Error al abrir imagen: {}", e)))?
+    } else {
+        image::open(&clean_path).map_err(|e| format!("Error al abrir la imagen: {}", e))?
+    };
 
     let rgba_res = crate::services::bg_removal::remove_background(
         &img,
@@ -2244,6 +2252,100 @@ pub fn apply_remove_background(
     let src_path = PathBuf::from(&clean_src);
     if !src_path.exists() {
         return Err(format!("El archivo de origen no existe: {}", clean_src));
+    }
+
+    let is_gif = src_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("gif"))
+        .unwrap_or(false);
+
+    let now = chrono::Local::now().to_rfc3339();
+    let emotes_dir = get_active_emotes_dir(&conn);
+
+    if is_gif {
+        use tauri::Emitter;
+        let file_bytes = fs::read(&src_path)
+            .map_err(|e| format!("Error al leer archivo GIF: {}", e))?;
+
+        let app_clone = app.clone();
+        let processed_gif_bytes = crate::services::bg_removal::remove_background_gif(
+            &file_bytes,
+            &model_path,
+            &active_id,
+            temperature,
+            move |progress| {
+                let _ = app_clone.emit("bg-gif-progress", progress);
+            },
+        )?;
+
+        let (w, h) = if let Ok(first_frame) = crate::services::bg_removal::extract_first_frame_from_gif(&processed_gif_bytes) {
+            (first_frame.width() as i32, first_frame.height() as i32)
+        } else {
+            (128, 128)
+        };
+
+        if as_copy {
+            let new_name = format!("{} NoBG", orig_name);
+            let file_stem = extract_stem(&src_path);
+            let new_filename = format!("{}_nobg_{}.gif", file_stem, uuid::Uuid::new_v4());
+            let target_path = emotes_dir.join(&new_filename);
+
+            fs::write(&target_path, &processed_gif_bytes)
+                .map_err(|e| format!("Error al guardar la nueva copia de GIF: {}", e))?;
+
+            let norm_target = normalize_path(&target_path);
+
+            conn.execute(
+                "INSERT INTO emotes (name, tag, path, original_width, original_height, format, created_at, copy_count, interaction_count) VALUES (?1, ?2, ?3, ?4, ?5, 'gif', ?6, 0, 0)",
+                params![new_name, orig_tag, norm_target, w, h, now],
+            ).map_err(|e| format!("Error al insertar en BD: {}", e))?;
+
+            let new_id = conn.last_insert_rowid();
+            let file_size = fs::metadata(&target_path).ok().map(|m| m.len());
+
+            return Ok(crate::models::Emote {
+                id: new_id,
+                name: new_name,
+                tag: orig_tag,
+                path: norm_target,
+                original_width: w,
+                original_height: h,
+                format: "gif".to_string(),
+                created_at: now,
+                file_size,
+                copy_count: 0,
+                interaction_count: 0,
+                last_used_at: None,
+            });
+        } else {
+            fs::write(&src_path, &processed_gif_bytes)
+                .map_err(|e| format!("Error al sobrescribir archivo GIF: {}", e))?;
+
+            let norm_target = normalize_path(&src_path);
+
+            conn.execute(
+                "UPDATE emotes SET path = ?1, original_width = ?2, original_height = ?3, format = 'gif' WHERE id = ?4",
+                params![norm_target, w, h, emote_id],
+            ).map_err(|e| format!("Error al actualizar emote en BD: {}", e))?;
+
+            let file_size = fs::metadata(&src_path).ok().map(|m| m.len());
+
+            return Ok(crate::models::Emote {
+                id: emote_id,
+                name: orig_name,
+                tag: orig_tag,
+                path: norm_target,
+                original_width: w,
+                original_height: h,
+                format: "gif".to_string(),
+                created_at: now,
+                file_size,
+                copy_count,
+                interaction_count,
+                last_used_at,
+            });
+        }
     }
 
     let img = image::open(&src_path).map_err(|e| format!("Error al abrir imagen: {}", e))?;

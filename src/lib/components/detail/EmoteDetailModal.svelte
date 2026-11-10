@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount } from "svelte";
   import {
     Copy,
     Check,
@@ -13,25 +13,25 @@
     MousePointerClick,
     AlertCircle,
     RotateCcw,
-    Wand2
-  } from '@lucide/svelte';
-  import type { Emote, GifLoopStatus } from '$lib/types/emote';
-  import { api } from '$lib/services/api';
+    Wand2,
+  } from "@lucide/svelte";
+  import type { Emote, GifLoopStatus } from "$lib/types/emote";
+  import { api } from "$lib/services/api";
   import emotes, {
     loadEmotes,
     topHotRanks,
-    isEmoteNewByDate
-  } from '$lib/stores/emotes';
+    isEmoteNewByDate,
+  } from "$lib/stores/emotes";
   import {
     allSizePresets,
     customSizes,
     defaultResolution,
     addCustomSize,
-    removeCustomSize
-  } from '$lib/stores/sizes';
-  import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
-  import { recordCopiedEmote } from '$lib/stores/preferences';
-  import { toast } from '$lib/stores/toast';
+    removeCustomSize,
+  } from "$lib/stores/sizes";
+  import { minimizeOnCopyEnabled } from "$lib/stores/systemSettings";
+  import { recordCopiedEmote } from "$lib/stores/preferences";
+  import { toast } from "$lib/stores/toast";
   import {
     SIZE_PRESETS,
     formatFileSize,
@@ -40,24 +40,31 @@
     isAnimatedEmote,
     renderEmoteToCanvas,
     resolveDimensions,
-    toPascalCase
-  } from '$lib/utils/format';
-  import { Alert, Badge, Button, Chip, Input, Modal } from '$lib/components/system-ui';
-  import { convertFileSrc } from '@tauri-apps/api/core';
-  import TagManager from './TagManager.svelte';
-  import DeleteEmoteModal from '../DeleteEmoteModal.svelte';
-  import RemoveBgModal from './RemoveBgModal.svelte';
+    toPascalCase,
+  } from "$lib/utils/format";
+  import {
+    Alert,
+    Badge,
+    Button,
+    Chip,
+    Input,
+    Modal,
+  } from "$lib/components/system-ui";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import TagManager from "./TagManager.svelte";
+  import DeleteEmoteModal from "../DeleteEmoteModal.svelte";
+  import RemoveBgModal from "./RemoveBgModal.svelte";
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
 
-  let selectedSize = $defaultResolution || 'original';
-  let selectedFormat = 'webp';
+  let selectedSize = $defaultResolution || "original";
+  let selectedFormat = "webp";
 
-  let emoteName = '';
+  let emoteName = "";
   let tagList: string[] = [];
-  let copyFeedback = '';
-  let copyButtonText = 'Copy to Clipboard (Ctrl+C)';
+  let copyFeedback = "";
+  let copyButtonText = "Copy to Clipboard (Ctrl+C)";
   let copyCount = 0;
   let interactionCount = 0;
   let initializedEmoteId: number | null = null;
@@ -68,8 +75,8 @@
   let showCustomSizeInput = false;
   let customWidth = 96;
   let customHeight = 96;
-  let customSizeError = '';
-  let nameError = '';
+  let customSizeError = "";
+  let nameError = "";
   let showDeleteConfirm = false;
   let showRemoveBgModal = false;
 
@@ -82,7 +89,7 @@
     try {
       gifLoopStatus = await api.getEmoteGifLoop(emote.id);
     } catch (e) {
-      console.error('Error al consultar bucle de GIF:', e);
+      console.error("Error al consultar bucle de GIF:", e);
     }
   }
 
@@ -94,23 +101,25 @@
       gifLoopStatus = await api.setEmoteGifLoop(emote.id, targetInfinite);
       previewCacheBuster += 1;
       if (targetInfinite) {
-        toast.success('Bucle infinito activado para este GIF');
+        toast.success("Bucle infinito activado para este GIF");
       } else {
-        toast.info('Bucle infinito desactivado (se reproducirá 1 vez y se frenará)');
+        toast.info(
+          "Bucle infinito desactivado (se reproducirá 1 vez y se frenará)",
+        );
       }
     } catch (e) {
-      console.error('Error al actualizar bucle de GIF:', e);
-      toast.error('No se pudo actualizar el bucle del GIF');
+      console.error("Error al actualizar bucle de GIF:", e);
+      toast.error("No se pudo actualizar el bucle del GIF");
     } finally {
       isUpdatingLoop = false;
     }
   }
 
   function handleAddCustomSize() {
-    customSizeError = '';
+    customSizeError = "";
     const preset = addCustomSize(customWidth, customHeight);
     if (!preset) {
-      customSizeError = 'Las dimensiones deben ser entre 8 y 4096 px.';
+      customSizeError = "Las dimensiones deben ser entre 8 y 4096 px.";
       return;
     }
     selectedSize = preset.value;
@@ -134,13 +143,13 @@
 
   $: if (emote && emote.id !== initializedEmoteId) {
     initializedEmoteId = emote.id;
-    selectedSize = $defaultResolution || 'original';
-    emoteName = emote.name ?? '';
-    nameError = '';
+    selectedSize = $defaultResolution || "original";
+    emoteName = emote.name ?? "";
+    nameError = "";
     copyCount = emote.copy_count ?? 0;
     interactionCount = emote.interaction_count ?? 0;
-    tagList = (emote.tag ?? '')
-      .split(',')
+    tagList = (emote.tag ?? "")
+      .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
     if (isAnimatedEmote(emote)) {
@@ -151,7 +160,7 @@
   $: isAnimated = isAnimatedEmote(emote);
   $: availableFormats = getAvailableFormats(emote);
   $: if (emote && !availableFormats.includes(selectedFormat)) {
-    selectedFormat = isAnimated ? 'gif' : 'webp';
+    selectedFormat = isAnimated ? "gif" : "webp";
   }
 
   $: hotRank = emote ? ($topHotRanks.get(emote.id) ?? null) : null;
@@ -166,7 +175,9 @@
 
   $: sizeDiffPercent = (() => {
     if (!emote?.file_size || !newFileSize || emote.file_size <= 0) return null;
-    return Math.round(((newFileSize - emote.file_size) / emote.file_size) * 100);
+    return Math.round(
+      ((newFileSize - emote.file_size) / emote.file_size) * 100,
+    );
   })();
 
   $: resolutionDiffPercent = (() => {
@@ -180,7 +191,7 @@
   function showToast(msg: string) {
     copyFeedback = msg;
     setTimeout(() => {
-      copyFeedback = '';
+      copyFeedback = "";
     }, 2500);
   }
 
@@ -188,19 +199,21 @@
     if (!emote) return false;
     const currentId = emote.id;
     const clean = toPascalCase(candidate.trim());
-    if (!clean || clean.toLowerCase() === (emote.name ?? '').toLowerCase()) {
+    if (!clean || clean.toLowerCase() === (emote.name ?? "").toLowerCase()) {
       return false;
     }
     return $emotes.some(
-      (e) => e.id !== currentId && (e.name ?? '').toLowerCase() === clean.toLowerCase()
+      (e) =>
+        e.id !== currentId &&
+        (e.name ?? "").toLowerCase() === clean.toLowerCase(),
     );
   }
 
   function handleNameInput() {
     if (checkNameOccupied(emoteName)) {
-      nameError = 'Este nombre ya está ocupado';
+      nameError = "Este nombre ya está ocupado";
     } else {
-      nameError = '';
+      nameError = "";
     }
   }
 
@@ -209,11 +222,11 @@
     const cleanName = toPascalCase(newName) || newName;
     const cleanTags = newTags.map((t) => toPascalCase(t)).filter(Boolean);
     tagList = cleanTags;
-    const joinedTags = cleanTags.join(', ');
+    const joinedTags = cleanTags.join(", ");
 
     try {
       const updatedPath = await api.updateTag(emote.id, cleanName, joinedTags);
-      nameError = '';
+      nameError = "";
       emote.name = cleanName;
       emote.tag = joinedTags;
       if (updatedPath) {
@@ -222,8 +235,8 @@
       await loadEmotes();
     } catch (e: any) {
       const msg = e?.message || String(e);
-      if (msg.toLowerCase().includes('ocupado')) {
-        nameError = 'Este nombre ya está ocupado';
+      if (msg.toLowerCase().includes("ocupado")) {
+        nameError = "Este nombre ya está ocupado";
       } else {
         showToast(`Error al guardar: ${msg}`);
       }
@@ -235,10 +248,10 @@
     const normalized = toPascalCase(emoteName.trim()) || emote.name;
     emoteName = normalized;
     if (checkNameOccupied(normalized)) {
-      nameError = 'Este nombre ya está ocupado';
+      nameError = "Este nombre ya está ocupado";
       return;
     }
-    nameError = '';
+    nameError = "";
     if (normalized !== emote.name) {
       persistMetadata(normalized, tagList);
     }
@@ -247,8 +260,8 @@
   async function calculateNewSize() {
     if (!emote) return;
     if (
-      selectedSize === 'original' &&
-      selectedFormat.toLowerCase() === (emote.format ?? '').toLowerCase()
+      selectedSize === "original" &&
+      selectedFormat.toLowerCase() === (emote.format ?? "").toLowerCase()
     ) {
       newFileSize = emote.file_size ?? null;
       return;
@@ -259,7 +272,7 @@
       const canvas = await renderEmoteToCanvas(
         emote.path,
         targetDimensions.width,
-        targetDimensions.height
+        targetDimensions.height,
       );
       canvas.toBlob(
         (blob) => {
@@ -267,7 +280,7 @@
           isCalculatingSize = false;
         },
         getMimeType(selectedFormat),
-        0.9
+        0.9,
       );
     } catch {
       isCalculatingSize = false;
@@ -279,19 +292,19 @@
       await navigator.clipboard.writeText(text);
       showToast(`¡${label} copiado!`);
     } catch {
-      showToast('Error al copiar texto');
+      showToast("Error al copiar texto");
     }
   }
 
   async function copyImageToClipboard() {
     if (!emote) return;
-    const isGif = isAnimatedEmote(emote) || selectedFormat === 'gif';
+    const isGif = isAnimatedEmote(emote) || selectedFormat === "gif";
     let resizingToastId: string | null = null;
     if (isGif) {
-      resizingToastId = toast.info('Redimensionando...', 0);
+      resizingToastId = toast.info("Redimensionando...", 0);
       await new Promise((r) => setTimeout(r, 20));
     }
-    copyButtonText = 'Copiando...';
+    copyButtonText = "Copiando...";
 
     try {
       const { width: targetW, height: targetH } = targetDimensions;
@@ -300,7 +313,7 @@
         emote.path,
         selectedFormat,
         targetW,
-        targetH
+        targetH,
       );
 
       copyCount += 1;
@@ -312,13 +325,15 @@
         toast.dismiss(resizingToastId);
         resizingToastId = null;
       }
-      copyButtonText = '✓ ¡Copiado!';
-      showToast(`✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`);
+      copyButtonText = "✓ ¡Copiado!";
+      showToast(
+        `✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`,
+      );
       if ($minimizeOnCopyEnabled) {
         await api.minimizeWindow();
       }
       setTimeout(() => {
-        copyButtonText = 'Copy to Clipboard (Ctrl+C)';
+        copyButtonText = "Copy to Clipboard (Ctrl+C)";
       }, 2200);
     } catch (err: any) {
       if (resizingToastId) {
@@ -326,17 +341,17 @@
         resizingToastId = null;
       }
       showToast(`Error: ${err?.message || err}`);
-      copyButtonText = 'Copy to Clipboard (Ctrl+C)';
+      copyButtonText = "Copy to Clipboard (Ctrl+C)";
     }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
       const active = document.activeElement as HTMLElement | null;
       const isTextInput =
         active &&
-        (active.tagName === 'INPUT' ||
-          active.tagName === 'TEXTAREA' ||
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
           active.isContentEditable);
       const selection = window.getSelection()?.toString();
       if (isTextInput && selection && selection.length > 0) {
@@ -355,11 +370,11 @@
       const canvas = await renderEmoteToCanvas(emote.path, targetW, targetH);
       const dataUrl = canvas.toDataURL(getMimeType(selectedFormat), 0.95);
 
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `${emoteName || emote.name}_${targetW}x${targetH}.${selectedFormat}`;
       a.click();
-      showToast('✓ Imagen descargada');
+      showToast("✓ Imagen descargada");
     } catch (e: any) {
       showToast(`Error al descargar: ${e?.message || e}`);
     }
@@ -378,7 +393,7 @@
     <div class="top-row">
       <div class="preview-box">
         <img
-          src={`${convertFileSrc(emote.path)}${previewCacheBuster ? `?t=${previewCacheBuster}` : ''}`}
+          src={`${convertFileSrc(emote.path)}${previewCacheBuster ? `?t=${previewCacheBuster}` : ""}`}
           alt={emote.name}
           class="preview-img"
         />
@@ -397,7 +412,7 @@
             variant="icon"
             size="sm"
             title="Copiar nombre"
-            on:click={() => copyText(emoteName, 'Nombre')}
+            on:click={() => copyText(emoteName, "Nombre")}
           >
             <Copy size={14} />
           </Button>
@@ -409,18 +424,13 @@
           </div>
         {/if}
 
-        <Input
-          label="Link"
-          readonly
-          value={emote.path}
-          title={emote.path}
-        >
+        <Input label="Link" readonly value={emote.path} title={emote.path}>
           <Button
             slot="trailing"
             variant="icon"
             size="sm"
             title="Copiar ruta"
-            on:click={() => copyText(emote?.path ?? '', 'Ruta')}
+            on:click={() => copyText(emote?.path ?? "", "Ruta")}
           >
             <Copy size={14} />
           </Button>
@@ -432,7 +442,7 @@
       <div class="options-label">Tamaño / Dimensiones:</div>
       <div class="pills-row">
         {#each $allSizePresets as preset}
-          {@const isCustom = preset.value.startsWith('custom_')}
+          {@const isCustom = preset.value.startsWith("custom_")}
           <Chip
             active={selectedSize === preset.value}
             removable={isCustom}
@@ -440,7 +450,7 @@
             on:remove={() => {
               removeCustomSize(preset.value);
               if (selectedSize === preset.value) {
-                selectedSize = 'original';
+                selectedSize = "original";
               }
               toast.info(`Tamaño ${preset.label} eliminado`);
             }}
@@ -499,7 +509,7 @@
 
     <div class="options-section">
       <div class="options-label">
-        Formato a copiar (Default: {isAnimated ? 'GIF' : 'WebP'}):
+        Formato a copiar (Default: {isAnimated ? "GIF" : "WebP"}):
       </div>
       <div class="pills-row">
         {#each availableFormats as fmt}
@@ -515,18 +525,21 @@
 
     {#if isAnimated}
       <div class="options-section">
-        <div class="options-label">
-          Bucle de animación del GIF:
-        </div>
+        <div class="options-label">Bucle de animación del GIF:</div>
         <div class="gif-loop-row">
           <div class="gif-loop-info">
-            <span class="loop-badge" class:loop-infinite={gifLoopStatus?.is_infinite}>
-              {gifLoopStatus?.is_infinite ? 'Bucle Infinito (Continuo)' : '1 Reproducción (Se frena)'}
+            <span
+              class="loop-badge"
+              class:loop-infinite={gifLoopStatus?.is_infinite}
+            >
+              {gifLoopStatus?.is_infinite
+                ? "Bucle Infinito (Continuo)"
+                : "1 Reproducción (Se frena)"}
             </span>
             <span class="loop-desc">
               {gifLoopStatus?.is_infinite
-                ? 'El emote se anima sin detenerse en la app y al pegarlo en Discord/chats.'
-                : 'El emote se reproduce 1 vez y se congela en el último frame en la app y al pegarlo.'}
+                ? "El emote se anima sin detenerse en la app y al pegarlo en Discord/chats."
+                : "El emote se reproduce 1 vez y se congela en el último frame en la app y al pegarlo."}
             </span>
           </div>
           <Button
@@ -536,7 +549,11 @@
             on:click={toggleGifLoop}
           >
             <RotateCcw size={14} />
-            <span>{gifLoopStatus?.is_infinite ? 'Desactivar bucle (Frenar)' : 'Activar bucle infinito'}</span>
+            <span
+              >{gifLoopStatus?.is_infinite
+                ? "Desactivar bucle (Frenar)"
+                : "Activar bucle infinito"}</span
+            >
           </Button>
         </div>
       </div>
@@ -561,7 +578,7 @@
       <div class="meta-line">
         <span class="meta-key">Resolución:</span>
         <div class="meta-comparison">
-          {#if selectedSize === 'original' || (emote.original_width === targetDimensions.width && emote.original_height === targetDimensions.height)}
+          {#if selectedSize === "original" || (emote.original_width === targetDimensions.width && emote.original_height === targetDimensions.height)}
             <span class="meta-value bold">
               {emote.original_width}×{emote.original_height} px
             </span>
@@ -587,7 +604,9 @@
           {#if emote.format && selectedFormat.toUpperCase() !== emote.format.toUpperCase()}
             <span class="meta-value muted">{emote.format.toUpperCase()}</span>
             <ArrowRight size={12} class="arrow-sep" />
-            <span class="meta-value bold highlight">{selectedFormat.toUpperCase()}</span>
+            <span class="meta-value bold highlight"
+              >{selectedFormat.toUpperCase()}</span
+            >
           {:else}
             <span class="meta-value bold">{selectedFormat.toUpperCase()}</span>
           {/if}
@@ -600,11 +619,15 @@
           {#if isCalculatingSize}
             <span class="meta-value muted">Calculando...</span>
           {:else if newFileSize !== null && emote.file_size && emote.file_size !== newFileSize}
-            <span class="meta-value muted">{formatFileSize(emote.file_size)}</span>
+            <span class="meta-value muted"
+              >{formatFileSize(emote.file_size)}</span
+            >
             <ArrowRight size={12} class="arrow-sep" />
-            <span class="meta-value bold highlight">{formatFileSize(newFileSize)}</span>
+            <span class="meta-value bold highlight"
+              >{formatFileSize(newFileSize)}</span
+            >
             {#if sizeDiffPercent !== null}
-              <Badge variant={sizeDiffPercent < 0 ? 'green' : 'amber'}>
+              <Badge variant={sizeDiffPercent < 0 ? "green" : "amber"}>
                 {sizeDiffPercent < 0
                   ? `-${Math.abs(sizeDiffPercent)}%`
                   : `+${sizeDiffPercent}%`}
@@ -614,7 +637,7 @@
             <span class="meta-value bold">
               {formatFileSize(newFileSize ?? emote.file_size)}
             </span>
-            {#if selectedSize === 'original'}
+            {#if selectedSize === "original"}
               <Badge variant="gray">Original</Badge>
             {/if}
           {/if}
@@ -635,11 +658,14 @@
         <div class="meta-comparison">
           <Badge variant="amber">
             <Copy size={11} />
-            <span>{copyCount} {copyCount === 1 ? 'copia' : 'copias'}</span>
+            <span>{copyCount} {copyCount === 1 ? "copia" : "copias"}</span>
           </Badge>
           <Badge variant="gray">
             <MousePointerClick size={11} />
-            <span>{interactionCount} {interactionCount === 1 ? 'interacción' : 'interacciones'}</span>
+            <span
+              >{interactionCount}
+              {interactionCount === 1 ? "interacción" : "interacciones"}</span
+            >
           </Badge>
           {#if isHot}
             <Badge variant="hot">
@@ -658,16 +684,14 @@
     </div>
 
     <svelte:fragment slot="footer">
-      {#if !isAnimated}
-        <Button
-          variant="secondary"
-          size="sm"
-          on:click={() => (showRemoveBgModal = true)}
-          title="Eliminar fondo de la imagen usando IA local"
-        >
-          <Wand2 size={14} /> Quitar fondo
-        </Button>
-      {/if}
+      <Button
+        variant="secondary"
+        size="sm"
+        on:click={() => (showRemoveBgModal = true)}
+        title="Eliminar fondo de la imagen o GIF animado usando IA local"
+      >
+        <Wand2 size={14} /> Quitar fondo
+      </Button>
       <Button variant="outline" size="sm" on:click={downloadResizedImage}>
         <Download size={14} /> Descargar copia
       </Button>
@@ -841,7 +865,8 @@
   .size-num-input:focus {
     outline: none;
     border-color: var(--color-orange-primary, #f97316);
-    box-shadow: 0 0 0 2px var(--color-orange-focus-ring, rgba(249, 115, 22, 0.25));
+    box-shadow: 0 0 0 2px
+      var(--color-orange-focus-ring, rgba(249, 115, 22, 0.25));
   }
   .size-cross {
     color: var(--color-text-dim, #71717a);

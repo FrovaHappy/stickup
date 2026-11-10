@@ -1,9 +1,11 @@
+use image::codecs::gif::{GifDecoder, GifEncoder, Repeat};
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView, GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
+use image::{AnimationDecoder, DynamicImage, Frame, GenericImageView, GrayImage, ImageBuffer, Luma, Rgba, RgbaImage};
 use ndarray::Array4;
 use ort::environment::Environment;
 use ort::session::{builder::GraphOptimizationLevel, Session};
 use ort::value::TensorRef;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -331,6 +333,90 @@ pub fn remove_background(
     Ok(output)
 }
 
+pub fn extract_first_frame_from_gif(gif_bytes: &[u8]) -> Result<DynamicImage, String> {
+    let decoder = GifDecoder::new(std::io::Cursor::new(gif_bytes))
+        .map_err(|e| format!("Error al decodificar GIF: {}", e))?;
+    let mut frames = decoder.into_frames();
+    if let Some(first_res) = frames.next() {
+        let frame = first_res.map_err(|e| format!("Error al leer primer fotograma: {}", e))?;
+        Ok(DynamicImage::ImageRgba8(frame.into_buffer()))
+    } else {
+        Err("El GIF no contiene fotogramas válidos.".to_string())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GifProgress {
+    pub current_frame: usize,
+    pub total_frames: usize,
+    pub percentage: f32,
+}
+
+pub fn remove_background_gif<F>(
+    gif_bytes: &[u8],
+    model_path: &Path,
+    model_id: &str,
+    temperature: Option<f32>,
+    mut progress_callback: F,
+) -> Result<Vec<u8>, String>
+where
+    F: FnMut(GifProgress),
+{
+    let decoder = GifDecoder::new(std::io::Cursor::new(gif_bytes))
+        .map_err(|e| format!("Error al decodificar GIF: {}", e))?;
+    let frames = decoder
+        .into_frames()
+        .collect_frames()
+        .map_err(|e| format!("Error al extraer fotogramas del GIF: {}", e))?;
+
+    let total = frames.len();
+    if total == 0 {
+        return Err("El archivo GIF no contiene fotogramas.".to_string());
+    }
+
+    let mut processed_frames: Vec<Frame> = Vec::with_capacity(total);
+
+    for (i, frame) in frames.into_iter().enumerate() {
+        progress_callback(GifProgress {
+            current_frame: i + 1,
+            total_frames: total,
+            percentage: ((i as f32) / (total as f32)) * 100.0,
+        });
+
+        let delay = frame.delay();
+        let left = frame.left();
+        let top = frame.top();
+        let dyn_img = DynamicImage::ImageRgba8(frame.into_buffer());
+        let nobg_rgba = remove_background(&dyn_img, model_path, model_id, temperature)?;
+
+        let new_frame = Frame::from_parts(nobg_rgba, left, top, delay);
+        processed_frames.push(new_frame);
+    }
+
+    progress_callback(GifProgress {
+        current_frame: total,
+        total_frames: total,
+        percentage: 100.0,
+    });
+
+    let mut out_bytes = Vec::new();
+    {
+        let mut encoder = GifEncoder::new(&mut out_bytes);
+        encoder
+            .set_repeat(Repeat::Infinite)
+            .map_err(|e| format!("Error al configurar repetición de GIF: {}", e))?;
+        for f in processed_frames {
+            encoder
+                .encode_frame(f)
+                .map_err(|e| format!("Error al codificar fotograma en GIF: {}", e))?;
+        }
+    }
+
+    // Asegurar bucle infinito preservado
+    let patched = crate::services::gif::patch_gif_loop(&out_bytes, true).unwrap_or(out_bytes);
+    Ok(patched)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,5 +487,36 @@ mod tests {
 
         set_idle_timeout_secs(DEFAULT_IDLE_TIMEOUT_SECS);
         assert_eq!(get_idle_timeout_secs(), DEFAULT_IDLE_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn test_frame_api() {
+        use image::{Delay, Frame, RgbaImage};
+        let img = RgbaImage::new(10, 10);
+        let frame = Frame::from_parts(img, 0, 0, Delay::from_numer_denom_ms(100, 1));
+        assert_eq!(frame.left(), 0);
+    }
+
+    #[test]
+    fn test_extract_first_frame_from_gif() {
+        use image::codecs::gif::GifEncoder;
+        use image::{Delay, Frame, RgbaImage};
+
+        let mut gif_bytes = Vec::new();
+        {
+            let mut encoder = GifEncoder::new(&mut gif_bytes);
+            let img = RgbaImage::from_pixel(16, 16, image::Rgba([255, 0, 0, 255]));
+            let frame = Frame::from_parts(img, 0, 0, Delay::from_numer_denom_ms(100, 1));
+            encoder.encode_frame(frame).unwrap();
+        }
+
+        let first = extract_first_frame_from_gif(&gif_bytes);
+        assert!(first.is_ok());
+        let dyn_img = first.unwrap();
+        assert_eq!(dyn_img.width(), 16);
+        assert_eq!(dyn_img.height(), 16);
+
+        let invalid_res = extract_first_frame_from_gif(b"not-a-gif");
+        assert!(invalid_res.is_err());
     }
 }

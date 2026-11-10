@@ -23,3 +23,9 @@ export interface BgDownloadProgress {
   percentage: number;
   done: boolean;
 }
+
+export interface BgGifProgress {
+  current_frame: number;
+  total_frames: number;
+  percentage: number;
+}

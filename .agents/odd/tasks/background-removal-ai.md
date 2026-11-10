@@ -5,7 +5,7 @@ En StickUp, los emotes y stickers requieren fondos transparentes (canal alfa) pa
 Muchos usuarios importan imágenes estáticas (memes, avatares, fotos) con fondos sólidos (blancos, negros) o fondos complejos que ensucian la experiencia como emote.
 
 Se requiere:
-- **Alcance Inicial:** Estrictamente **imágenes estáticas** (PNG, JPG, WebP). En formatos animados (GIF, WebP animado) se deshabilita la opción o se muestra un aviso indicativo para evitar sobrecarga de cómputo.
+- **Alcance Inicial:** Soporte tanto para **imágenes estáticas** (PNG, JPG, WebP) como para **GIFs animados** (procesamiento fotograma a fotograma con reporte de progreso y retención de delays y bucle).
 - **Inferencia Local, Privada y Multiplataforma:** Procesamiento 100% en la máquina del usuario (sin enviar imágenes a la nube). Compatible con Windows, Linux y macOS vía `ort` (ONNX Runtime).
 - **Selector de Modelos con BiRefNet Lite por Defecto:**
   - `birefnet_lite`: SOTA en segmentación y matting de alta resolución con ImageNet normalization y activación sigmoide (~224 MB).
@@ -86,4 +86,10 @@ Se requiere:
 - [x] 7. **Verificación & Documentación:**
   - Documentar cambios en `changelogs/unreleased.md` (formato Keep a Changelog).
   - Verificar que compile sin errores ni warnings con `pnpm run prebuild`.
+- [x] 8. **Soporte de GIFs Animados:**
+  - Decodificación de frames con delays y preservación de loop Netscape.
+  - Previsualización rápida sobre el primer fotograma en el Before/After slider.
+  - Inferencia secuencial fotograma a fotograma con reporte de progreso (`bg-gif-progress`).
+  - Reensamblado de GIF animado con transparencia (RGBA).
+  - Habilitar botón en `EmoteDetailModal.svelte` para GIFs y barra de progreso de fotogramas en `RemoveBgModal.svelte`.
 
