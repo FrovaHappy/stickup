@@ -1,6 +1,7 @@
 # Unreleased
 
 ### Added
+- **Script de compilación unificado**: Nuevo comando `pnpm build:binaries <plataformas...>` para compilar Linux y/o Windows reutilizando el frontend.
 - **Eliminación de fondo en GIFs animados con IA**: Procesamiento secuencial fotograma a fotograma con reporte de progreso (`bg-gif-progress`), preservación de tiempos y bucle infinito.
 - **Previsualización ágil de GIFs**: Visor instantáneo Before/After en el primer fotograma antes de procesar la animación completa.
 - **Eliminación de fondo con IA local**: Inferencia nativa bajo demanda con BiRefNet Lite por defecto y previsualización interactiva.
@@ -18,4 +19,5 @@
 - **Copiado de GIFs**: Respeta repeticiones finitas configuradas al redimensionar en portapapeles.
 
 ### Fixed
+- **Cross-compilación a Windows con xwin**: Corrección de enlace en Linux por discrepancia de mayúsculas/minúsculas en `DirectML.lib` y `PathCch.lib`.
 - **Ciclo de vida del runtime ONNX**: Corrección del error `only one environment is allowed per process` al liberar memoria manteniendo `OrtEnv` global mediante `OnceLock`. 

@@ -155,11 +155,8 @@ jobs:
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Build Tauri for Linux (.deb, .AppImage & binary)
-        run: pnpm tauri build --bundles deb,appimage
-
-      - name: Build Tauri for Windows (.exe NSIS & binary)
-        run: pnpm tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis --config '{"build":{"beforeBuildCommand":""}}'
+      - name: Build Tauri applications (Linux & Windows)
+        run: pnpm build:binaries linux windows
 
       - name: Collect installers and uncompressed binaries
         run: |
