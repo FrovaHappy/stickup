@@ -17,7 +17,7 @@
   import emotes, { loadEmotes } from '$lib/stores/emotes';
   import { toast } from '$lib/stores/toast';
   import { formatFileSize } from '$lib/utils/format';
-  import { Alert, Badge, Button, Modal } from '$lib/components/system-ui';
+  import { Badge, Button, Modal, Toast } from '$lib/components/system-ui';
   import type { BackupInfo } from '$lib/types/backup';
 
   let storagePath = '';
@@ -77,7 +77,9 @@
       }
     } catch (e: any) {
       console.error('Error al seleccionar la ruta de almacenamiento:', e);
-      showStatus(`Error: ${e?.message || e}`, true);
+      const errMsg = e?.message || e || 'Error al seleccionar carpeta';
+      showStatus(`Error: ${errMsg}`, true);
+      toast.error(`Error al seleccionar carpeta: ${errMsg}`);
     }
   }
 
@@ -97,13 +99,13 @@
       askDbConflict = false;
       await loadEmotes();
       await refreshBackupsList();
-      showStatus(
-        migrate
-          ? overwriteDb === false
-            ? '✓ Imágenes migradas conservando la base de datos del destino'
-            : '✓ Emotes y base de datos migrados a la nueva carpeta'
-          : '✓ Directorio de emotes y base de datos actualizado'
-      );
+      const statusText = migrate
+        ? overwriteDb === false
+          ? 'Imágenes migradas conservando la base de datos del destino'
+          : 'Emotes y base de datos migrados a la nueva carpeta'
+        : 'Directorio de emotes y base de datos actualizado';
+      showStatus(statusText);
+      toast.success(statusText);
     } catch (e: any) {
       const errText = String(e?.message || e || '');
       if (errText.includes('DB_EXISTS_IN_TARGET')) {
@@ -116,6 +118,7 @@
         askDbConflict = false;
         console.error('Error al aplicar cambio de directorio:', e);
         showStatus(`Error: ${errText}`, true);
+        toast.error(`Error al aplicar cambio de directorio: ${errText}`);
       }
     } finally {
       isBusy = false;
@@ -314,9 +317,9 @@
   {#if pendingTargetPath}
     <div class="prompt-container">
       {#if askDbConflict}
-        <Alert
-          variant="info"
-          title="⚠️ Ya existe una base de datos (.store.db) en el destino. ¿Cuál deseas conservar?"
+        <Toast
+          variant="warning"
+          title="Ya existe una base de datos (.store.db) en el destino. ¿Cuál deseas conservar?"
         >
           <div class="prompt-dest" title={pendingTargetPath}>
             Destino: <code>{pendingTargetPath}</code>
@@ -346,11 +349,11 @@
               Cancelar
             </Button>
           </svelte:fragment>
-        </Alert>
+        </Toast>
       {:else}
-        <Alert
+        <Toast
           variant="info"
-          title="📦 ¿Deseas migrar tus emotes y base de datos a la nueva carpeta?"
+          title="¿Deseas migrar tus emotes y base de datos a la nueva carpeta?"
         >
           <div class="prompt-dest" title={pendingTargetPath}>
             Destino: <code>{pendingTargetPath}</code>
@@ -380,7 +383,7 @@
               Cancelar
             </Button>
           </svelte:fragment>
-        </Alert>
+        </Toast>
       {/if}
     </div>
   {/if}
@@ -388,11 +391,11 @@
   <!-- Mensajes de estado -->
   {#if isBusy}
     <div class="status-row">
-      <Alert variant="info">⏳ Procesando solicitud...</Alert>
+      <Toast variant="info" message="⏳ Procesando solicitud..." />
     </div>
   {:else if message}
     <div class="status-row">
-      <Alert variant={isError ? 'error' : 'success'}>{message}</Alert>
+      <Toast variant={isError ? 'error' : 'success'} message={message} />
     </div>
   {/if}
 
@@ -505,10 +508,11 @@
   >
     {#if backupToRestore}
       <div class="restore-details">
-        <Alert variant="warning" title="⚠️ Reemplazo de base de datos">
-          Esta acción reemplazará los datos actuales por los del archivo seleccionado. StickUp creará
-          automáticamente un respaldo de seguridad preventivo antes de continuar.
-        </Alert>
+        <Toast
+          variant="warning"
+          title="Reemplazo de base de datos"
+          message="Esta acción reemplazará los datos actuales por los del archivo seleccionado. StickUp creará automáticamente un respaldo de seguridad preventivo antes de continuar."
+        />
 
         <div class="detail-box">
           <div class="detail-line">
@@ -551,9 +555,11 @@
   >
     {#if backupToDelete}
       <div class="restore-details">
-        <Alert variant="error" title="🗑️ Eliminar permanentemente">
-          ¿Estás seguro de que deseas eliminar esta copia de seguridad? Esta acción no se puede deshacer.
-        </Alert>
+        <Toast
+          variant="error"
+          title="Eliminar permanentemente"
+          message="¿Estás seguro de que deseas eliminar esta copia de seguridad? Esta acción no se puede deshacer."
+        />
 
         <div class="detail-box">
           <div class="detail-line">

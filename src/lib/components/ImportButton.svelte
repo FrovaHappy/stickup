@@ -4,7 +4,8 @@
   import { loadEmotes } from '$lib/stores/emotes';
   import { formatFileSize } from '$lib/utils/format';
   import type { ResyncStats } from '$lib/types/emote';
-  import { Alert, Badge, Button, Card } from '$lib/components/system-ui';
+  import { Badge, Button, Card, Toast } from '$lib/components/system-ui';
+  import { toast } from '$lib/stores/toast';
   import AddEmoteModal from './AddEmoteModal.svelte';
 
   let resyncing = false;
@@ -21,9 +22,13 @@
       const result = await api.resyncEmotes();
       resyncStats = result;
       await loadEmotes();
+      toast.success(
+        `Resincronización completada: ${result.added_to_db} agregados, ${result.converted_to_webp} convertidos a WebP`
+      );
     } catch (err: any) {
       console.error('Error al resincronizar directorio:', err);
       statusMsg = `Error al resincronizar: ${err?.message || err}`;
+      toast.error(statusMsg);
     } finally {
       resyncing = false;
     }
@@ -52,9 +57,7 @@
 
   {#if statusMsg}
     <div class="status-box">
-      <Alert variant="error" dismissible on:close={() => (statusMsg = '')}>
-        {statusMsg}
-      </Alert>
+      <Toast variant="error" message={statusMsg} dismissible on:dismiss={() => (statusMsg = '')} />
     </div>
   {/if}
 

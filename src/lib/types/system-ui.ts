@@ -19,19 +19,34 @@ export type ChipVariant = 'default' | 'indigo' | 'amber' | 'green' | 'sky' | 'ho
 
 export type InputVariant = 'default' | 'pill';
 
-export type AlertVariant = 'info' | 'success' | 'warning' | 'error' | 'toast';
-
 export type CardHighlight = 'none' | 'new' | 'hot' | 'indigo';
 
 export type CardPadding = 'sm' | 'md' | 'lg';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
+export type ToastImportance = 'low' | 'medium' | 'high';
+
+export type ToastImportanceFilter = 'all' | 'medium' | 'high' | 'none';
+
 export interface ToastItem {
   id: string;
+  title?: string;
   message: string;
   variant?: ToastVariant;
   duration?: number;
+  timestamp?: number;
+  importance?: ToastImportance;
+}
+
+export interface NotificationRecord {
+  id: string;
+  title: string;
+  message: string;
+  variant: ToastVariant;
+  timestamp: number;
+  read: boolean;
+  importance?: ToastImportance;
 }
 
 export interface ContextMenuItem {

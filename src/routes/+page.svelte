@@ -51,7 +51,7 @@
         toast.dismiss(resizingToastId);
         resizingToastId = null;
       }
-      toast.success(`✓ ¡Emote "${emote.name}" copiado (${resolved.label})!`);
+      toast.success(`¡Emote "${emote.name}" copiado (${resolved.label})!`);
       recordCopiedEmote(emote);
       await loadEmotes();
       if ($minimizeOnCopyEnabled) {
@@ -90,7 +90,7 @@
         toast.dismiss(resizingToastId);
         resizingToastId = null;
       }
-      toast.success(`✓ ¡"${emote.name}" copiado (${sizeLabel})!`);
+      toast.success(`¡"${emote.name}" copiado (${sizeLabel})!`);
       recordCopiedEmote(emote);
       await loadEmotes();
       if ($minimizeOnCopyEnabled) {
@@ -108,7 +108,7 @@
   async function handleCopyText(text: string, label: string) {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`✓ ${label} copiado al portapapeles`);
+      toast.success(`${label} copiado al portapapeles`);
     } catch {
       toast.error(`Error al copiar ${label.toLowerCase()}`);
     }

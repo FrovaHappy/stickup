@@ -19,7 +19,7 @@
     Code,
     Bookmark
   } from "@lucide/svelte";
-  import { Button, Input, Badge, Alert, Modal } from "$lib/components/system-ui";
+  import { Button, Input, Badge, Modal, Toast } from "$lib/components/system-ui";
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
@@ -670,9 +670,13 @@
 
     {#if scanError}
       <div class="error-banner">
-        <Alert variant="warning" title="Aviso de escaneo" dismissible on:close={() => (scanError = null)}>
-          {scanError}
-        </Alert>
+        <Toast
+          variant="warning"
+          title="Aviso de escaneo"
+          message={scanError}
+          dismissible
+          on:dismiss={() => (scanError = null)}
+        />
       </div>
     {/if}
   </div>

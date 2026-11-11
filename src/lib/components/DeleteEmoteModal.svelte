@@ -1,12 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { AlertTriangle, Trash2 } from '@lucide/svelte';
+  import { Trash2 } from '@lucide/svelte';
   import type { Emote } from '$lib/types/emote';
   import { api } from '$lib/services/api';
   import { loadEmotes } from '$lib/stores/emotes';
   import { toast } from '$lib/stores/toast';
   import { formatFileSize } from '$lib/utils/format';
-  import { Alert, Button, Modal } from '$lib/components/system-ui';
+  import { Button, Modal, Toast } from '$lib/components/system-ui';
   import { convertFileSrc } from '@tauri-apps/api/core';
 
   export let emote: Emote | null = null;
@@ -28,7 +28,7 @@
 
     try {
       await api.deleteEmote(target.id);
-      toast.success(`✓ Emote "${target.name}" eliminado`);
+      toast.success(`Emote "${target.name}" eliminado`);
       await loadEmotes();
       onDeleted?.();
       dispatch('deleted', target);
@@ -80,12 +80,11 @@
         </div>
       </div>
 
-      <Alert variant="error">
-        <div class="alert-content">
-          <AlertTriangle size={16} class="alert-icon" />
-          <span>¿Deseas eliminar este emote permanentemente? El archivo y sus datos se borrarán del disco y esta acción no se puede deshacer.</span>
-        </div>
-      </Alert>
+      <Toast
+        variant="error"
+        title="Atención"
+        message="¿Deseas eliminar este emote permanentemente? El archivo y sus datos se borrarán del disco y esta acción no se puede deshacer."
+      />
     </div>
 
     <svelte:fragment slot="footer">
@@ -176,17 +175,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: var(--color-orange-primary);
     font-weight: 600;
-  }
-
-  .alert-content {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  :global(.alert-icon) {
-    flex-shrink: 0;
-    margin-top: 2px;
   }
 </style>
 

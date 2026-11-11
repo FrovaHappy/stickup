@@ -11,12 +11,12 @@
   import type { Emote } from "$lib/types/emote";
   import PasteConfirmPopup from "./PasteConfirmPopup.svelte";
   import {
-    Alert,
     Button,
     Chip,
     Dropzone,
     Input,
     Modal,
+    Toast,
   } from "$lib/components/system-ui";
 
   export let isOpen = false;
@@ -546,9 +546,7 @@
     {/if}
 
     {#if statusMsg}
-      <Alert variant={isError ? "error" : "success"}>
-        {statusMsg}
-      </Alert>
+      <Toast variant={isError ? "error" : "success"} message={statusMsg} />
     {/if}
   </Dropzone>
 </Modal>

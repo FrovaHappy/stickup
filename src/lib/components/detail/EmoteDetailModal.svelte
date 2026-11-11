@@ -43,7 +43,6 @@
     toPascalCase,
   } from "$lib/utils/format";
   import {
-    Alert,
     Badge,
     Button,
     Chip,
@@ -63,7 +62,6 @@
 
   let emoteName = "";
   let tagList: string[] = [];
-  let copyFeedback = "";
   let copyButtonText = "Copy to Clipboard (Ctrl+C)";
   let copyCount = 0;
   let interactionCount = 0;
@@ -124,7 +122,7 @@
     }
     selectedSize = preset.value;
     showCustomSizeInput = false;
-    toast.success(`✓ Tamaño ${preset.label} guardado`);
+    toast.success(`Tamaño ${preset.label} guardado`);
   }
 
   onMount(async () => {
@@ -188,13 +186,6 @@
     return Math.round(((newArea - origArea) / origArea) * 100);
   })();
 
-  function showToast(msg: string) {
-    copyFeedback = msg;
-    setTimeout(() => {
-      copyFeedback = "";
-    }, 2500);
-  }
-
   function checkNameOccupied(candidate: string): boolean {
     if (!emote) return false;
     const currentId = emote.id;
@@ -238,7 +229,7 @@
       if (msg.toLowerCase().includes("ocupado")) {
         nameError = "Este nombre ya está ocupado";
       } else {
-        showToast(`Error al guardar: ${msg}`);
+        toast.error(`Error al guardar: ${msg}`);
       }
     }
   }
@@ -290,9 +281,9 @@
   async function copyText(text: string, label: string) {
     try {
       await navigator.clipboard.writeText(text);
-      showToast(`¡${label} copiado!`);
+      toast.success(`${label} copiado al portapapeles`);
     } catch {
-      showToast("Error al copiar texto");
+      toast.error(`Error al copiar ${label.toLowerCase()}`);
     }
   }
 
@@ -326,8 +317,8 @@
         resizingToastId = null;
       }
       copyButtonText = "✓ ¡Copiado!";
-      showToast(
-        `✓ Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})`,
+      toast.success(
+        `¡Copiado como ${selectedFormat.toUpperCase()} (${targetW}x${targetH})!`,
       );
       if ($minimizeOnCopyEnabled) {
         await api.minimizeWindow();
@@ -340,7 +331,7 @@
         toast.dismiss(resizingToastId);
         resizingToastId = null;
       }
-      showToast(`Error: ${err?.message || err}`);
+      toast.error(`Error al copiar: ${err?.message || err}`);
       copyButtonText = "Copy to Clipboard (Ctrl+C)";
     }
   }
@@ -374,9 +365,9 @@
       a.href = dataUrl;
       a.download = `${emoteName || emote.name}_${targetW}x${targetH}.${selectedFormat}`;
       a.click();
-      showToast("✓ Imagen descargada");
+      toast.success("Imagen descargada correctamente");
     } catch (e: any) {
-      showToast(`Error al descargar: ${e?.message || e}`);
+      toast.error(`Error al descargar: ${e?.message || e}`);
     }
   }
 
@@ -699,10 +690,6 @@
         <Trash2 size={14} /> Eliminar
       </Button>
     </svelte:fragment>
-
-    {#if copyFeedback}
-      <Alert variant="toast">{copyFeedback}</Alert>
-    {/if}
   </Modal>
 {/if}
 

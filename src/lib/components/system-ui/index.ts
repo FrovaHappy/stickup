@@ -1,4 +1,3 @@
-export { default as Alert } from './Alert.svelte';
 export { default as Badge } from './Badge.svelte';
 export { default as Button } from './Button.svelte';
 export { default as Card } from './Card.svelte';
@@ -12,7 +11,6 @@ export { default as Toast } from './Toast.svelte';
 export { default as Logo } from './Logo.svelte';
 
 export type {
-  AlertVariant,
   BadgeShape,
   BadgeVariant,
   ButtonSize,
@@ -22,6 +20,9 @@ export type {
   ChipVariant,
   ContextMenuItem,
   InputVariant,
+  NotificationRecord,
+  ToastImportance,
+  ToastImportanceFilter,
   ToastItem,
   ToastVariant
 } from '$lib/types/system-ui';

@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import type { Emote } from '$lib/types/emote';
 import type { GridSize, SortOption, SortOptionItem } from '$lib/types/preferences';
+import { toast } from '$lib/stores/toast';
 
 const GRID_SIZE_KEY = 'stickup_pref_grid_size';
 const SORT_OPTION_KEY = 'stickup_pref_sort_option';
@@ -82,6 +83,11 @@ export function recordCopiedEmote(emote: Emote) {
 
 export function setAskBeforePaste(enabled: boolean) {
   askBeforePaste.set(enabled);
+  if (enabled) {
+    toast.success('Confirmación al pegar activada');
+  } else {
+    toast.info('Confirmación al pegar desactivada');
+  }
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem(ASK_BEFORE_PASTE_KEY, String(enabled));

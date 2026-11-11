@@ -47,7 +47,12 @@
     setDefaultResolution
   } from '$lib/stores/sizes';
   import { askBeforePaste, setAskBeforePaste } from '$lib/stores/preferences';
-  import { toast } from '$lib/stores/toast';
+  import {
+    toast,
+    toastImportanceFilter,
+    setToastImportanceFilter
+  } from '$lib/stores/toast';
+  import type { ToastImportanceFilter } from '$lib/types/system-ui';
   import {
     autostartEnabled,
     minimizeToTrayEnabled,
@@ -198,7 +203,7 @@
     }
     const added = addCustomSize(newSizeWidth, newSizeHeight);
     if (added) {
-      toast.success(`✓ Tamaño ${added.label} agregado`);
+      toast.success(`Tamaño ${added.label} agregado`);
       newSizeWidth = null;
       newSizeHeight = null;
     } else {
@@ -213,7 +218,19 @@
 
   function handleSetFavoriteResolution(value: string, label: string) {
     setDefaultResolution(value);
-    toast.success(`✓ Resolución favorita establecida en ${label} (Ctrl+C)`);
+    toast.success(`Resolución favorita establecida en ${label} (Ctrl+C)`);
+  }
+
+  const TOAST_IMPORTANCE_OPTIONS: { id: ToastImportanceFilter; label: string; desc: string }[] = [
+    { id: 'all', label: 'Todas', desc: 'Muestra todas las notificaciones' },
+    { id: 'medium', label: 'Medias y altas', desc: 'Oculta avisos secundarios informativos' },
+    { id: 'high', label: 'Solo importantes', desc: 'Solo advertencias y errores críticos' },
+    { id: 'none', label: 'Silencioso', desc: 'Oculta todas las tarjetas emergentes' }
+  ];
+
+  function handleSelectToastImportance(filter: ToastImportanceFilter) {
+    setToastImportanceFilter(filter);
+    toast.success('Nivel de notificaciones actualizado', 2500, 'Configuración', 'high');
   }
 </script>
 
@@ -363,6 +380,32 @@
             >
               <span class="toggle-thumb"></span>
             </button>
+          </div>
+
+          <div class="toggle-separator"></div>
+
+          <div class="toggle-row column-layout">
+            <div class="toggle-info">
+              <span class="toggle-title">Nivel de notificaciones Toast</span>
+              <p class="toggle-desc">
+                Determina qué notificaciones emergentes se muestran como tarjetas flotantes en pantalla. El historial completo se conserva en el menú de Inicio.
+              </p>
+            </div>
+            <div class="importance-selector" role="radiogroup" aria-label="Nivel de importancia de toasts">
+              {#each TOAST_IMPORTANCE_OPTIONS as opt}
+                <button
+                  type="button"
+                  class="importance-option"
+                  class:active={$toastImportanceFilter === opt.id}
+                  role="radio"
+                  aria-checked={$toastImportanceFilter === opt.id}
+                  on:click={() => handleSelectToastImportance(opt.id)}
+                >
+                  <span class="importance-option-label">{opt.label}</span>
+                  <span class="importance-option-desc">{opt.desc}</span>
+                </button>
+              {/each}
+            </div>
           </div>
 
           <div class="toggle-separator"></div>
@@ -1323,6 +1366,59 @@
     justify-content: space-between;
     align-items: center;
     gap: 24px;
+  }
+
+  .toggle-row.column-layout {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .importance-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .importance-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+  }
+
+  .importance-option:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .importance-option.active {
+    background: rgba(var(--color-orange-rgb, 249, 115, 22), 0.10);
+    border-color: var(--color-orange-primary, #f97316);
+  }
+
+  .importance-option-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-main, #f4f4f5);
+  }
+
+  .importance-option.active .importance-option-label {
+    color: var(--color-orange-primary, #f97316);
+  }
+
+  .importance-option-desc {
+    font-size: 11.5px;
+    color: var(--color-text-dim, #71717a);
+    line-height: 1.35;
   }
 
   .toggle-info {

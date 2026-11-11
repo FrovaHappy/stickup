@@ -9,6 +9,14 @@
     Flame,
     Grid2x2,
     Check,
+    Bell,
+    BellOff,
+    CheckCheck,
+    Trash2,
+    Info,
+    CircleCheck,
+    TriangleAlert,
+    CircleAlert
   } from "@lucide/svelte";
   import {
     gridSize,
@@ -18,6 +26,15 @@
   } from "$lib/stores/preferences";
   import type { GridSize, SortOption } from "$lib/types/preferences";
   import { formatSearchQueryInput } from "$lib/utils/format";
+  import {
+    notifications,
+    unreadCount,
+    markAllAsRead,
+    markAsRead,
+    deleteNotification,
+    clearNotifications,
+    formatTimeAgo
+  } from "$lib/stores/notifications";
 
   export let searchQuery = "";
 
@@ -35,6 +52,7 @@
 
   let sortMenuOpen = false;
   let gridMenuOpen = false;
+  let notificationsMenuOpen = false;
 
   const SORT_ITEMS = [
     {
@@ -83,12 +101,21 @@
     e.stopPropagation();
     sortMenuOpen = !sortMenuOpen;
     gridMenuOpen = false;
+    notificationsMenuOpen = false;
   }
 
   function toggleGridMenu(e: MouseEvent) {
     e.stopPropagation();
     gridMenuOpen = !gridMenuOpen;
     sortMenuOpen = false;
+    notificationsMenuOpen = false;
+  }
+
+  function toggleNotificationsMenu(e: MouseEvent) {
+    e.stopPropagation();
+    notificationsMenuOpen = !notificationsMenuOpen;
+    sortMenuOpen = false;
+    gridMenuOpen = false;
   }
 
   function selectSort(opt: SortOption) {
@@ -104,6 +131,7 @@
   function closeAllMenus() {
     sortMenuOpen = false;
     gridMenuOpen = false;
+    notificationsMenuOpen = false;
   }
 </script>
 
@@ -230,6 +258,117 @@
               {/if}
             </button>
           {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Menú de Registro de Notificaciones -->
+    <div class="action-dropdown-container">
+      <button
+        type="button"
+        class="action-btn"
+        class:active={notificationsMenuOpen}
+        title="Registro de notificaciones"
+        aria-label="Registro de notificaciones"
+        on:click={toggleNotificationsMenu}
+      >
+        <Bell size={20} strokeWidth={2} />
+        {#if $unreadCount > 0}
+          <span class="unread-badge">{$unreadCount > 9 ? '9+' : $unreadCount}</span>
+        {/if}
+      </button>
+
+      {#if notificationsMenuOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+        <div
+          class="dropdown-popover right-aligned notifications-popover"
+          on:click|stopPropagation
+          role="menu"
+          tabindex="-1"
+        >
+          <div class="notif-header">
+            <div class="notif-header-left">
+              <span class="notif-header-title">Notificaciones</span>
+              {#if $notifications.length > 0}
+                <span class="notif-count-pill">{$notifications.length}</span>
+              {/if}
+            </div>
+            {#if $notifications.length > 0}
+              <div class="notif-header-actions">
+                {#if $unreadCount > 0}
+                  <button
+                    type="button"
+                    class="notif-action-icon-btn"
+                    title="Marcar todas como leídas"
+                    aria-label="Marcar todas como leídas"
+                    on:click={markAllAsRead}
+                  >
+                    <CheckCheck size={16} strokeWidth={2} />
+                  </button>
+                {/if}
+                <button
+                  type="button"
+                  class="notif-action-icon-btn danger"
+                  title="Vaciar historial"
+                  aria-label="Vaciar historial"
+                  on:click={clearNotifications}
+                >
+                  <Trash2 size={15} strokeWidth={2} />
+                </button>
+              </div>
+            {/if}
+          </div>
+
+          <div class="notif-list">
+            {#if $notifications.length === 0}
+              <div class="notif-empty-state">
+                <BellOff size={30} strokeWidth={1.8} class="notif-empty-icon" />
+                <span class="notif-empty-title">Sin notificaciones</span>
+                <span class="notif-empty-subtitle">El historial de avisos y copias aparecerá aquí.</span>
+              </div>
+            {:else}
+              {#each $notifications as notif (notif.id)}
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+                <div
+                  class="notif-item"
+                  class:unread={!notif.read}
+                  role="button"
+                  tabindex="0"
+                  on:click={() => markAsRead(notif.id)}
+                >
+                  <div class="notif-item-icon-box {notif.variant}">
+                    {#if notif.variant === 'error'}
+                      <CircleAlert size={16} strokeWidth={2} />
+                    {:else if notif.variant === 'warning'}
+                      <TriangleAlert size={16} strokeWidth={2} />
+                    {:else if notif.variant === 'info'}
+                      <Info size={16} strokeWidth={2} />
+                    {:else}
+                      <CircleCheck size={16} strokeWidth={2} />
+                    {/if}
+                  </div>
+
+                  <div class="notif-item-body">
+                    <div class="notif-item-top">
+                      <span class="notif-item-title">{notif.title}</span>
+                      <span class="notif-item-time">{formatTimeAgo(notif.timestamp)}</span>
+                    </div>
+                    <p class="notif-item-message">{notif.message}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    class="notif-item-delete"
+                    title="Eliminar notificación"
+                    aria-label="Eliminar notificación"
+                    on:click|stopPropagation={() => deleteNotification(notif.id)}
+                  >
+                    <X size={13} strokeWidth={2} />
+                  </button>
+                </div>
+              {/each}
+            {/if}
+          </div>
         </div>
       {/if}
     </div>
@@ -455,5 +594,256 @@
   .item-desc {
     font-size: 11px;
     color: #71717a;
+  }
+
+  /* Notificaciones */
+  .unread-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background-color: var(--color-orange-primary, #f97316);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 2px var(--color-bg-app, #1a1a1c);
+    pointer-events: none;
+  }
+
+  .notifications-popover {
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    max-height: 440px;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .notif-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .notif-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .notif-header-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-main, #f4f4f5);
+  }
+
+  .notif-count-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-muted, #a1a1aa);
+  }
+
+  .notif-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .notif-action-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-dim, #71717a);
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+
+  .notif-action-icon-btn:hover {
+    color: var(--color-text-main, #f4f4f5);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .notif-action-icon-btn.danger:hover {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.14);
+  }
+
+  .notif-list {
+    overflow-y: auto;
+    max-height: 380px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .notif-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-border-light, rgba(255, 255, 255, 0.06));
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    text-align: left;
+    outline: none;
+  }
+
+  .notif-item:last-child {
+    border-bottom: none;
+  }
+
+  .notif-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
+  .notif-item.unread {
+    background-color: rgba(var(--color-orange-rgb, 249, 115, 22), 0.05);
+  }
+
+  .notif-item.unread::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3.5px;
+    height: 18px;
+    border-radius: 2px;
+    background-color: var(--color-orange-primary, #f97316);
+  }
+
+  .notif-item-icon-box {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .notif-item-icon-box.success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+
+  .notif-item-icon-box.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .notif-item-icon-box.warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .notif-item-icon-box.info {
+    background: rgba(14, 165, 233, 0.15);
+    color: #38bdf8;
+  }
+
+  .notif-item-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .notif-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .notif-item-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-main, #f4f4f5);
+  }
+
+  .notif-item-time {
+    font-size: 11px;
+    color: var(--color-text-dim, #71717a);
+    white-space: nowrap;
+  }
+
+  .notif-item-message {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-text-muted, #a1a1aa);
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .notif-item-delete {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: var(--color-text-dim, #71717a);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s ease, color 0.15s ease;
+  }
+
+  .notif-item:hover .notif-item-delete {
+    opacity: 1;
+  }
+
+  .notif-item-delete:hover {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.14);
+  }
+
+  .notif-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 36px 20px;
+    text-align: center;
+    gap: 6px;
+  }
+
+  :global(.notif-empty-icon) {
+    color: var(--color-text-dim, #71717a);
+    margin-bottom: 4px;
+  }
+
+  .notif-empty-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-secondary, #e4e4e7);
+  }
+
+  .notif-empty-subtitle {
+    font-size: 12px;
+    color: var(--color-text-dim, #71717a);
+    max-width: 240px;
+    line-height: 1.4;
   }
 </style>
