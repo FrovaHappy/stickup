@@ -43,7 +43,21 @@ windows-sys = { version = "0.59", features = [
 
 [profile.dev]
 incremental = false
+debug = 1
+split-debuginfo = "unpacked"
+
+# Desactiva simbolos de depuracion en dependencias de terceros para ahorrar gigabytes
+[profile.dev.package."*"]
+debug = 0
 
 [profile.test]
 incremental = false
+
+# Optimizacion para tamano minimo de binario en produccion
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
 
