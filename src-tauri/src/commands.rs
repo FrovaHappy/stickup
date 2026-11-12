@@ -28,6 +28,19 @@ fn extract_stem(path: &Path) -> String {
         .to_string()
 }
 
+pub fn clean_emote_name(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let cleaned: String = trimmed
+        .chars()
+        .filter(|&c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .filter(|c| !c.is_control())
+        .collect();
+    cleaned.split_whitespace().collect::<Vec<&str>>().join(" ")
+}
+
 pub fn to_pascal_case(input: &str) -> String {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -275,7 +288,7 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
     let clean_name = if emote_name.trim().is_empty() {
         "Emote".to_string()
     } else {
-        to_pascal_case(emote_name)
+        clean_emote_name(emote_name)
     };
 
     let id = insert_emote_record(&conn, &clean_name, &dest_str, w, h, &format, &now)?;
@@ -1266,7 +1279,7 @@ pub fn update_emote_metadata_in_conn(
     let current_path = PathBuf::from(&clean_path);
     let mut final_path_str = clean_path.clone();
 
-    let clean_name = name.map(|n| to_pascal_case(&n)).filter(|s| !s.is_empty());
+    let clean_name = name.map(|n| clean_emote_name(&n)).filter(|s| !s.is_empty());
 
     if let Some(ref new_name) = clean_name {
         let is_name_taken: bool = conn
@@ -1293,7 +1306,13 @@ pub fn update_emote_metadata_in_conn(
                 .and_then(|e| e.to_str())
                 .unwrap_or("webp");
 
-            let new_file_name = format!("{}.{}", new_name, ext);
+            let file_stem = to_pascal_case(new_name);
+            let safe_stem = if file_stem.is_empty() {
+                "Emote".to_string()
+            } else {
+                file_stem
+            };
+            let new_file_name = format!("{}.{}", safe_stem, ext);
             let target_path = parent_dir.join(&new_file_name);
 
             let same_file = clean_path_str(&target_path.to_string_lossy()).to_lowercase()
@@ -2650,6 +2669,15 @@ mod tests {
     }
 
     #[test]
+    fn test_clean_emote_name() {
+        assert_eq!(clean_emote_name("pepe dance"), "pepe dance");
+        assert_eq!(clean_emote_name("  Pepe   Dance  "), "Pepe Dance");
+        assert_eq!(clean_emote_name("pepe/dance:cool*"), "pepedancecool");
+        assert_eq!(clean_emote_name(""), "");
+        assert_eq!(clean_emote_name("   "), "");
+    }
+
+    #[test]
     fn test_normalize_tags_str() {
         assert_eq!(
             normalize_tags_str("pepe, frog_dance, cool emote"),
@@ -2682,7 +2710,7 @@ mod tests {
         let new_path = update_emote_metadata_in_conn(
             &conn,
             1,
-            Some("NewAwesomeName".to_string()),
+            Some("New Awesome Name".to_string()),
             Some("tag1, newTag".to_string()),
         )
         .unwrap();
@@ -2697,7 +2725,7 @@ mod tests {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })
             .unwrap();
-        assert_eq!(db_name, "NewAwesomeName");
+        assert_eq!(db_name, "New Awesome Name");
         assert_eq!(db_tag, "Tag1, NewTag");
         assert_eq!(db_path, normalize_path(&expected_file));
 
@@ -2728,7 +2756,7 @@ mod tests {
         .unwrap();
 
         // 1. Intentar renombrar CatJam (id 2) a PepeDance (ya ocupado por id 1)
-        let err = update_emote_metadata_in_conn(&conn, 2, Some("pepe_dance".to_string()), None)
+        let err = update_emote_metadata_in_conn(&conn, 2, Some("PepeDance".to_string()), None)
             .unwrap_err();
         assert!(err.contains("ya está ocupado"));
 

@@ -7,7 +7,7 @@
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
   import { askBeforePaste, lastCopiedEmote } from "$lib/stores/preferences";
-  import { toPascalCase } from "$lib/utils/format";
+  import { toPascalCase, sanitizeEmoteName } from "$lib/utils/format";
   import type { Emote } from "$lib/types/emote";
   import PasteConfirmPopup from "./PasteConfirmPopup.svelte";
   import {
@@ -205,7 +205,7 @@
       }
 
       const normalizedName = customName.trim()
-        ? toPascalCase(customName)
+        ? sanitizeEmoteName(customName)
         : inspect.suggested_name || "Clipboard";
 
       // Si askBeforePaste está desactivado: guardar directamente
@@ -283,7 +283,7 @@
     isError = false;
 
     try {
-      const normalizedName = customName.trim() ? toPascalCase(customName) : undefined;
+      const normalizedName = customName.trim() ? sanitizeEmoteName(customName) : undefined;
       const created = await api.importFromUrl(urlValue.trim(), normalizedName);
       urlValue = "";
       customName = "";

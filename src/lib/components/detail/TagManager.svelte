@@ -98,6 +98,7 @@
       title="Tags globales existentes"
       subtitle="{suggestedTags.length} disponibles"
       maxHeight="200px"
+      placement="top"
       on:close={() => (showSuggestions = false)}
     >
       <div class="tag-dropdown-list">

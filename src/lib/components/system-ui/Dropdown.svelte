@@ -5,6 +5,7 @@
   export let title: string | undefined = undefined;
   export let subtitle: string | undefined = undefined;
   export let maxHeight = '320px';
+  export let placement: 'bottom' | 'top' = 'bottom';
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -21,7 +22,10 @@
     role="presentation"
   ></div>
 
-  <div class="ui-dropdown-menu" style:max-height={maxHeight}>
+  <div
+    class="ui-dropdown-menu placement-{placement}"
+    style:max-height={maxHeight}
+  >
     {#if title || subtitle || $$slots.header}
       <div class="ui-dropdown-header">
         {#if $$slots.header}
@@ -52,7 +56,6 @@
 
   .ui-dropdown-menu {
     position: absolute;
-    top: calc(100% + 8px);
     left: 0;
     right: 0;
     z-index: 100;
@@ -64,7 +67,18 @@
     flex-direction: column;
     overflow: hidden;
     text-align: left;
-    animation: dropdownSlideIn 0.14s ease-out;
+  }
+
+  .ui-dropdown-menu.placement-bottom {
+    top: calc(100% + 8px);
+    bottom: auto;
+    animation: dropdownSlideInBottom 0.14s ease-out;
+  }
+
+  .ui-dropdown-menu.placement-top {
+    bottom: calc(100% + 8px);
+    top: auto;
+    animation: dropdownSlideInTop 0.14s ease-out;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -77,10 +91,21 @@
     }
   }
 
-  @keyframes dropdownSlideIn {
+  @keyframes dropdownSlideInBottom {
     from {
       opacity: 0;
       transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes dropdownSlideInTop {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
     }
     to {
       opacity: 1;

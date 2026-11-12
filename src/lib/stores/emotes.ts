@@ -2,7 +2,7 @@ import { writable, derived } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
 import type { Emote } from '$lib/types/emote';
 import { api } from '$lib/services/api';
-import { toPascalCase } from '$lib/utils/format';
+import { toPascalCase, sanitizeEmoteName } from '$lib/utils/format';
 
 export type { Emote };
 
@@ -77,7 +77,7 @@ export async function loadEmotes() {
     const list = await api.listEmotes();
     const normalized = (list ?? []).map((e) => ({
       ...e,
-      name: toPascalCase(e.name) || e.name,
+      name: sanitizeEmoteName(e.name) || e.name,
       tag: e.tag
         ? e.tag
             .split(',')

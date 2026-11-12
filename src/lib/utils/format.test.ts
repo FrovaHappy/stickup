@@ -6,7 +6,8 @@ import {
   formatFileSize,
   resolveDimensions,
   toPascalCase,
-  formatSearchQueryInput
+  formatSearchQueryInput,
+  sanitizeEmoteName
 } from './format';
 import type { Emote } from '$lib/types/emote';
 
@@ -135,6 +136,32 @@ describe('format utilities', () => {
       expect(formatSearchQueryInput('---')).toBe('');
     });
   });
+
+  describe('sanitizeEmoteName', () => {
+    it('preserves spaces within name', () => {
+      expect(sanitizeEmoteName('pepe dance')).toBe('pepe dance');
+      expect(sanitizeEmoteName('Pepe Dance')).toBe('Pepe Dance');
+      expect(sanitizeEmoteName('Cool Emote 123')).toBe('Cool Emote 123');
+    });
+
+    it('collapses multiple consecutive spaces and trims edges', () => {
+      expect(sanitizeEmoteName('   pepe    dance   ')).toBe('pepe dance');
+      expect(sanitizeEmoteName('  Cat   Jam  ')).toBe('Cat Jam');
+    });
+
+    it('removes illegal filesystem characters', () => {
+      expect(sanitizeEmoteName('pepe/dance:cool*test?')).toBe('pepedancecooltest');
+      expect(sanitizeEmoteName('emote<1>|"hi"')).toBe('emote1hi');
+    });
+
+    it('handles empty, whitespace or null inputs', () => {
+      expect(sanitizeEmoteName('')).toBe('');
+      expect(sanitizeEmoteName('   ')).toBe('');
+      expect(sanitizeEmoteName(null)).toBe('');
+      expect(sanitizeEmoteName(undefined)).toBe('');
+    });
+  });
 });
+
 
 

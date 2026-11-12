@@ -145,3 +145,19 @@ export function formatSearchQueryInput(input: string): string {
   return hasTrailingSeparator ? `${parsed} ` : parsed;
 }
 
+/**
+ * Sanitiza el nombre de un emote permitiendo letras, números, espacios y caracteres seguros,
+ * eliminando caracteres ilegales del sistema de archivos y colapsando espacios consecutivos.
+ */
+export function sanitizeEmoteName(str?: string | null): string {
+  if (!str) return '';
+  const trimmed = str.trim();
+  if (!trimmed) return '';
+
+  return trimmed
+    .replace(/[/\\:*?"<>|\x00-\x1f\x7f-\x9f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+

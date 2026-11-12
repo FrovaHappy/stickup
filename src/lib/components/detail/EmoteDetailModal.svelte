@@ -41,6 +41,7 @@
     renderEmoteToCanvas,
     resolveDimensions,
     toPascalCase,
+    sanitizeEmoteName,
   } from "$lib/utils/format";
   import {
     Badge,
@@ -189,7 +190,7 @@
   function checkNameOccupied(candidate: string): boolean {
     if (!emote) return false;
     const currentId = emote.id;
-    const clean = toPascalCase(candidate.trim());
+    const clean = sanitizeEmoteName(candidate);
     if (!clean || clean.toLowerCase() === (emote.name ?? "").toLowerCase()) {
       return false;
     }
@@ -210,7 +211,7 @@
 
   async function persistMetadata(newName: string, newTags: string[]) {
     if (!emote) return;
-    const cleanName = toPascalCase(newName) || newName;
+    const cleanName = sanitizeEmoteName(newName) || newName;
     const cleanTags = newTags.map((t) => toPascalCase(t)).filter(Boolean);
     tagList = cleanTags;
     const joinedTags = cleanTags.join(", ");
@@ -236,7 +237,7 @@
 
   function handleNameBlur() {
     if (!emote) return;
-    const normalized = toPascalCase(emoteName.trim()) || emote.name;
+    const normalized = sanitizeEmoteName(emoteName) || emote.name;
     emoteName = normalized;
     if (checkNameOccupied(normalized)) {
       nameError = "Este nombre ya está ocupado";
@@ -363,7 +364,8 @@
 
       const a = document.createElement("a");
       a.href = dataUrl;
-      a.download = `${emoteName || emote.name}_${targetW}x${targetH}.${selectedFormat}`;
+      const safeStem = toPascalCase(emoteName || emote.name) || "Emote";
+      a.download = `${safeStem}_${targetW}x${targetH}.${selectedFormat}`;
       a.click();
       toast.success("Imagen descargada correctamente");
     } catch (e: any) {
@@ -397,6 +399,11 @@
           placeholder="Nombre del emote"
           on:input={handleNameInput}
           on:blur={handleNameBlur}
+          on:keydown={(e) => {
+            if (e.detail?.key === "Enter" || (e as any).key === "Enter") {
+              handleNameBlur();
+            }
+          }}
         >
           <Button
             slot="trailing"
