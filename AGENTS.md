@@ -19,6 +19,7 @@ Todo cambio en **StickUp** se rige por **ODD** (ver detalle completo en [.agents
 
 0. **Gestor de Paquetes Exclusivo**:
    - El gestor de paquetes del proyecto es estrictamente **pnpm** (`pnpm run check`, `pnpm test`, `pnpm build`, `pnpm dev`, etc.). No usar npm.
+   - No es necesario estar buscando node o pnpm en el sistema (ejecutar directamente `pnpm run prebuild`).
 
 1. **Mínimo e Indispensable**:
    - No mantener funciones, comandos de Tauri, plugins ni dependencias en `Cargo.toml` o `package.json` que no sean invocados activamente.

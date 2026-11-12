@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { RefreshCw, X } from '@lucide/svelte';
+  import { RefreshCw, Plus, X } from '@lucide/svelte';
   import { api } from '$lib/services/api';
   import { loadEmotes } from '$lib/stores/emotes';
   import { formatFileSize } from '$lib/utils/format';
   import type { ResyncStats } from '$lib/types/emote';
   import { Badge, Button, Card, Toast } from '$lib/components/system-ui';
   import { toast } from '$lib/stores/toast';
-  import AddEmoteModal from './AddEmoteModal.svelte';
+  import { openAddModal } from '$lib/services/clipboardManager';
 
   let resyncing = false;
   let statusMsg = '';
@@ -42,7 +42,14 @@
 
 <div class="actions-wrapper">
   <div class="buttons-row">
-    <AddEmoteModal />
+    <Button
+      variant="primary"
+      on:click={openAddModal}
+      title="Agregar emotes (Archivos, Carpeta, Portapapeles con Ctrl+V, URL o Drag & Drop)"
+    >
+      <Plus size={16} />
+      <span>Agregar Emotes</span>
+    </Button>
 
     <Button
       variant="success"

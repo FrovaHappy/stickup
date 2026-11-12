@@ -30,6 +30,7 @@
     parseCollectorInput,
     isSafeHttpUrl,
   } from "$lib/utils/domCollector";
+  import { cleanUrlInput } from "$lib/services/urlScanner";
 
   const GITHUB_COLLECTOR_FILE_URL = "https://github.com/FrovaHappy/stickup/blob/main/src/lib/utils/domCollector.ts";
 
@@ -75,7 +76,7 @@
   $: allSelected = scannedImages.length > 0 && selectedCount === scannedImages.length;
 
   async function handleScanUrl() {
-    const trimmed = targetUrl.trim();
+    const trimmed = cleanUrlInput(targetUrl);
     if (!trimmed) {
       scanError = "Por favor, ingresa una URL válida que comience con http:// o https://";
       return;

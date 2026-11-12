@@ -253,22 +253,16 @@ pub async fn send_get_tracked(
     let mut header_sha256: Option<String> = None;
 
     for _hop in 0..=MAX_REDIRECTS {
-        let (parsed, resolved) = resolve_and_validate_public_url(&current_url)?;
+        let (parsed, _resolved) = resolve_and_validate_public_url(&current_url)?;
         if https_only && parsed.scheme() != "https" {
             return Err("Se requiere conexión HTTPS segura en toda la cadena de descarga".to_string());
         }
 
-        let mut builder = Client::builder()
+        let client = Client::builder()
             .redirect(redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(timeout_secs))
-            .user_agent(STICKUP_USER_AGENT);
-
-        if let Some((ref domain, ref addrs)) = resolved {
-            builder = builder.resolve_to_addrs(domain, addrs);
-        }
-
-        let client = builder
+            .user_agent(STICKUP_USER_AGENT)
             .build()
             .map_err(|e| format!("Error inicializando cliente HTTP: {}", e))?;
 

@@ -14,10 +14,14 @@
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
-  import { askBeforePaste, lastCopiedEmote } from "$lib/stores/preferences";
-  import { toPascalCase, parseUrlOrPath } from "$lib/utils/format";
   import type { Emote } from "$lib/types/emote";
-  import PasteConfirmPopup from "./PasteConfirmPopup.svelte";
+  import { toPascalCase } from "$lib/utils/format";
+  import {
+    handleClipboardPasteAction,
+    handleGlobalPasteEvent,
+    handleGlobalKeyDownEvent,
+  } from "$lib/services/clipboardManager";
+  import { processUrlOrPath } from "$lib/services/urlScanner";
   import {
     Button,
     Dropzone,
@@ -33,35 +37,6 @@
   let urlValue = "";
   let statusMsg = "";
   let isError = false;
-  let lastPasteTimestamp = 0;
-  const PASTE_COOLDOWN_MS = 1200;
-
-  let showPasteConfirm = false;
-  let popupPreviewUrl = "";
-  let popupSuggestedName = "";
-  let popupIsBusy = false;
-  let pendingSaveAction: (() => Promise<void>) | null = null;
-
-  async function handleConfirmSave(dontAskAgain: boolean) {
-    if (popupIsBusy || !pendingSaveAction) return;
-    popupIsBusy = true;
-    try {
-      await pendingSaveAction();
-      showPasteConfirm = false;
-      pendingSaveAction = null;
-    } catch (err: any) {
-      toast.error(`Error al guardar: ${err?.message || err}`);
-    } finally {
-      popupIsBusy = false;
-    }
-  }
-
-  function handleCancelSave() {
-    showPasteConfirm = false;
-    pendingSaveAction = null;
-    popupPreviewUrl = "";
-    popupSuggestedName = "";
-  }
 
   let unlistenTauriDrop: (() => void) | null = null;
 
@@ -182,92 +157,26 @@
   }
 
   async function handlePasteClipboard() {
-    if (isBusy || popupIsBusy) return;
-
+    if (isBusy) return;
     try {
-      // 1. Capa de verificación con inspectClipboard
-      const inspect = await api.inspectClipboard();
-
-      if (inspect.is_duplicate) {
-        const name = inspect.duplicate_name || "seleccionado";
-        toast.info(`El emote "${name}" ya existe en tu colección`);
-        return;
-      }
-
-      if (
-        $lastCopiedEmote &&
-        inspect.suggested_name &&
-        inspect.suggested_name.toLowerCase() === $lastCopiedEmote.name.toLowerCase()
-      ) {
-        toast.info(`El emote "${$lastCopiedEmote.name}" ya existe en tu colección`);
-        return;
-      }
-
-      if (!inspect.has_image || !inspect.preview_data_url) {
-        showFeedback("No se encontraron imágenes compatibles (.png, .jpg, .webp, .gif).", true);
-        return;
-      }
-
-      const normalizedName = inspect.suggested_name || "Clipboard";
-
-      // Si askBeforePaste está desactivado: guardar directamente
-      if (!$askBeforePaste) {
-        await executeDirectClipboardImport(normalizedName);
-        return;
-      }
-
-      // Si askBeforePaste está activado: mostrar modal en la derecha inferior
-      popupPreviewUrl = inspect.preview_data_url;
-      popupSuggestedName = normalizedName;
-      pendingSaveAction = async () => {
-        await executeDirectClipboardImport(normalizedName);
-      };
-      showPasteConfirm = true;
+      await handleClipboardPasteAction({
+        onSuccess: (name, fmt) => {
+          showFeedback(`✓ ¡Emote "${name}"${fmt ? ` (${fmt})` : ""} agregado exitosamente!`);
+        },
+        onError: (err) => {
+          showFeedback(`Error: ${err}`, true);
+        },
+        onStatus: (msg) => {
+          isBusy = true;
+          statusMsg = msg;
+        },
+      });
     } catch (err: any) {
       if (typeof err === "string" && err.includes("ya está en curso")) {
         return;
       }
       const msg = err?.message || String(err);
-      if (msg.includes("ya existe")) {
-        toast.info(msg);
-      } else {
-        showFeedback(`Error: ${msg}`, true);
-      }
-    }
-  }
-
-  async function executeDirectClipboardImport(nameToUse?: string) {
-    isBusy = true;
-    statusMsg = "Guardando emote...";
-    isError = false;
-
-    try {
-      const result = await api.importFromClipboard(nameToUse);
-      await loadEmotes();
-
-      const list: Emote[] = Array.isArray(result)
-        ? result
-        : result && typeof result === "object" && ("id" in result || "name" in result)
-        ? [result as Emote]
-        : [];
-
-      if (list.length === 1) {
-        const item = list[0];
-        const fmt = item?.format ? ` (${item.format.toUpperCase()})` : "";
-        const name = item?.name || "emote";
-        showFeedback(
-          `✓ ¡Emote "${name}"${fmt} agregado exitosamente!`,
-        );
-      } else if (list.length > 1) {
-        showFeedback(
-          `✓ ¡${list.length} emotes agregados exitosamente!`,
-        );
-      }
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      if (msg.includes("ya existe")) {
-        toast.info(msg);
-      } else {
+      if (!msg.includes("ya existe")) {
         showFeedback(`Error: ${msg}`, true);
       }
     } finally {
@@ -283,21 +192,24 @@
     isBusy = true;
     isError = false;
 
-    const parsed = parseUrlOrPath(rawInput);
+    try {
+      const result = await processUrlOrPath(rawInput, {
+        onStatus: (msg) => {
+          statusMsg = msg;
+        },
+      });
+      await loadEmotes();
+      urlValue = "";
 
-    if (parsed.type === "local") {
-      statusMsg = "Importando desde ruta local...";
-      try {
-        const imported = await api.importPaths([parsed.value]);
-        await loadEmotes();
-        urlValue = "";
-        if (imported.length === 1) {
-          const item = imported[0];
+      if (result.type === "local") {
+        const list = result.localEmotes || [];
+        if (list.length === 1) {
+          const item = list[0];
           const fmt = item.format ? ` (${item.format.toUpperCase()})` : "";
           showFeedback(`✓ ¡Emote "${item.name}"${fmt} agregado exitosamente!`);
-        } else if (imported.length > 1) {
+        } else if (list.length > 1) {
           showFeedback(
-            `✓ ¡${imported.length} emotes agregados exitosamente desde el directorio!`,
+            `✓ ¡${list.length} emotes agregados exitosamente desde el directorio!`,
           );
         } else {
           showFeedback(
@@ -305,93 +217,50 @@
             true,
           );
         }
-      } catch (err: any) {
-        showFeedback(`Error: ${err?.message || err}`, true);
-      } finally {
-        setTimeout(() => {
-          isBusy = false;
-        }, 400);
-      }
-      return;
-    }
-
-    // URL web
-    const targetUrl = parsed.value;
-    const isDirectImage =
-      /\.(png|jpe?g|gif|webp|svg|avif|bmp)($|\?|#)/i.test(targetUrl) ||
-      targetUrl.includes("cdn.discordapp.com/emojis/");
-
-    if (isDirectImage) {
-      statusMsg = "Descargando imagen desde URL...";
-      try {
-        const created = await api.importFromUrl(targetUrl);
-        urlValue = "";
-        await loadEmotes();
-        const fmt = created?.format ? ` (${created.format.toUpperCase()})` : "";
-        const name = created?.name || "emote";
-        showFeedback(`✓ ¡Emote "${name}"${fmt} agregado desde URL!`);
-      } catch {
-        await tryScanWebUrl(targetUrl);
-      } finally {
-        setTimeout(() => {
-          isBusy = false;
-        }, 400);
-      }
-      return;
-    }
-
-    // No es extensión de imagen directa: es directorio web o página
-    await tryScanWebUrl(targetUrl);
-    setTimeout(() => {
-      isBusy = false;
-    }, 400);
-  }
-
-  async function tryScanWebUrl(url: string) {
-    statusMsg = "Escaneando URL / directorio web...";
-    try {
-      const scanned = await api.scanUrl(url);
-      if (scanned && scanned.length > 0) {
-        statusMsg = `Importando ${scanned.length} ${scanned.length === 1 ? "imagen encontrada" : "imágenes encontradas"}...`;
-        const importRequests = scanned.map((s) => ({
-          url: s.url,
-          name: s.suggested_name,
-        }));
-        const result = await api.importScannedImages(importRequests);
-        await loadEmotes();
-        urlValue = "";
-        if (result.imported.length === 1) {
-          const item = result.imported[0];
-          const fmt = item.format ? ` (${item.format.toUpperCase()})` : "";
-          showFeedback(`✓ ¡Emote "${item.name}"${fmt} agregado desde URL!`);
-        } else if (result.imported.length > 1) {
-          showFeedback(
-            `✓ ¡${result.imported.length} emotes importados exitosamente desde la URL!`,
-          );
+      } else if (result.type === "direct" && result.directEmote) {
+        const fmt = result.directEmote.format
+          ? ` (${result.directEmote.format.toUpperCase()})`
+          : "";
+        showFeedback(
+          `✓ ¡Emote "${result.directEmote.name}"${fmt} agregado desde URL!`,
+        );
+      } else if (result.type === "scanned") {
+        const scanned = result.scannedImages || [];
+        if (scanned.length > 0) {
+          statusMsg = `Importando ${scanned.length} ${scanned.length === 1 ? "imagen encontrada" : "imágenes encontradas"}...`;
+          const importRequests = scanned.map((s) => ({
+            url: s.url,
+            name: s.suggested_name,
+          }));
+          const scanRes = await api.importScannedImages(importRequests);
+          await loadEmotes();
+          if (scanRes.imported.length === 1) {
+            const item = scanRes.imported[0];
+            const fmt = item.format ? ` (${item.format.toUpperCase()})` : "";
+            showFeedback(`✓ ¡Emote "${item.name}"${fmt} agregado desde URL!`);
+          } else if (scanRes.imported.length > 1) {
+            showFeedback(
+              `✓ ¡${scanRes.imported.length} emotes importados exitosamente desde la URL!`,
+            );
+          } else {
+            showFeedback(
+              "Las imágenes encontradas no pudieron importarse o ya existen.",
+              true,
+            );
+          }
         } else {
-          showFeedback(
-            `No se pudieron importar las imágenes encontradas (${result.failed_count} fallaron).`,
-            true,
-          );
+          showFeedback("No se encontraron imágenes compatibles en la URL.", true);
         }
-        return;
       }
-    } catch {
-      // Si el escaneo falló, intentar importación directa como último recurso
-    }
-
-    try {
-      const created = await api.importFromUrl(url);
-      urlValue = "";
-      await loadEmotes();
-      const fmt = created?.format ? ` (${created.format.toUpperCase()})` : "";
-      const name = created?.name || "emote";
-      showFeedback(`✓ ¡Emote "${name}"${fmt} agregado desde URL!`);
     } catch (err: any) {
       if (typeof err === "string" && err.includes("ya está en curso")) {
         return;
       }
       showFeedback(`Error: ${err?.message || err}`, true);
+    } finally {
+      setTimeout(() => {
+        isBusy = false;
+      }, 400);
     }
   }
 
@@ -443,124 +312,46 @@
     }
   }
 
-  function handleGlobalKeyDown(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
-      if (e.repeat) {
-        e.preventDefault();
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      const now = Date.now();
-      if (now - lastPasteTimestamp < PASTE_COOLDOWN_MS || isBusy) {
-        e.preventDefault();
-        return;
-      }
-      lastPasteTimestamp = now;
-      e.preventDefault();
-      handlePasteClipboard();
+  async function handleGlobalKeyDown(e: KeyboardEvent) {
+    try {
+      await handleGlobalKeyDownEvent(e, {
+        onSuccess: (name, fmt) => {
+          showFeedback(`✓ ¡Emote "${name}"${fmt ? ` (${fmt})` : ""} agregado exitosamente!`);
+        },
+        onError: (err) => {
+          showFeedback(`Error: ${err}`, true);
+        },
+        onStatus: (msg) => {
+          isBusy = true;
+          statusMsg = msg;
+        },
+      });
+    } finally {
+      setTimeout(() => {
+        isBusy = false;
+      }, 400);
     }
   }
 
   async function handleGlobalPaste(e: ClipboardEvent) {
-    const target = e.target as HTMLElement | null;
-    if (
-      target &&
-      (target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable)
-    ) {
-      return;
-    }
-    const now = Date.now();
-    if (now - lastPasteTimestamp < PASTE_COOLDOWN_MS || isBusy) {
-      e.preventDefault();
-      return;
-    }
-    lastPasteTimestamp = now;
-    e.preventDefault();
-
-    // Discriminar si el navegador entrega directamente archivos / blobs en el evento de paste
-    const dt = e.clipboardData;
-    if (dt && dt.files && dt.files.length > 0) {
-      const validFiles: File[] = [];
-      let hadUnsupported = false;
-      for (let i = 0; i < dt.files.length; i++) {
-        const file = dt.files[i];
-        const isSupported =
-          file.type.startsWith("image/") ||
-          /\.(png|jpe?g|gif|webp)$/i.test(file.name);
-        if (isSupported) {
-          validFiles.push(file);
-        } else {
-          hadUnsupported = true;
-        }
-      }
-
-      if (validFiles.length > 0) {
-        const file = validFiles[0];
-        const stem = file.name
-          ? toPascalCase(file.name.replace(/\.[^/.]+$/, ""))
-          : "Clipboard";
-
-        // Verificación de duplicado
-        if (
-          $lastCopiedEmote &&
-          stem.toLowerCase() === $lastCopiedEmote.name.toLowerCase()
-        ) {
-          toast.info(`El emote "${$lastCopiedEmote.name}" ya existe en tu colección`);
-          return;
-        }
-
-        const buf = await file.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buf));
-
-        if (!$askBeforePaste) {
+    try {
+      await handleGlobalPasteEvent(e, {
+        onSuccess: (name, fmt) => {
+          showFeedback(`✓ ¡Emote "${name}"${fmt ? ` (${fmt})` : ""} agregado exitosamente!`);
+        },
+        onError: (err) => {
+          showFeedback(`Error: ${err}`, true);
+        },
+        onStatus: (msg) => {
           isBusy = true;
-          statusMsg = "Importando imagen pegada...";
-          isError = false;
-          try {
-            await api.importRawBytes(bytes, stem || "Clipboard");
-            await loadEmotes();
-            showFeedback(`✓ ¡Emote "${stem}" agregado exitosamente!`);
-            return;
-          } catch (err: any) {
-            showFeedback(`Error: ${err?.message || err}`, true);
-            return;
-          } finally {
-            setTimeout(() => {
-              isBusy = false;
-            }, 400);
-          }
-        }
-
-        // Si askBeforePaste está activado:
-        popupPreviewUrl = URL.createObjectURL(file);
-        popupSuggestedName = stem;
-        pendingSaveAction = async () => {
-          await api.importRawBytes(bytes, stem || "Clipboard");
-          await loadEmotes();
-          showFeedback(`✓ ¡Emote "${stem}" agregado exitosamente!`);
-        };
-        showPasteConfirm = true;
-        return;
-      } else if (hadUnsupported) {
-        showFeedback(
-          "El archivo pegado no es compatible. Solo se admiten imágenes PNG, JPG, JPEG, GIF o WebP.",
-          true,
-        );
-        return;
-      }
+          statusMsg = msg;
+        },
+      });
+    } finally {
+      setTimeout(() => {
+        isBusy = false;
+      }, 400);
     }
-
-    await handlePasteClipboard();
   }
 </script>
 
@@ -656,15 +447,6 @@
     {/if}
   </Dropzone>
 </Modal>
-
-<PasteConfirmPopup
-  open={showPasteConfirm}
-  previewUrl={popupPreviewUrl}
-  name={popupSuggestedName}
-  isBusy={popupIsBusy}
-  onSave={handleConfirmSave}
-  onCancel={handleCancelSave}
-/>
 
 <style>
   .url-import-form {

@@ -246,6 +246,36 @@ pub fn normalize_discord_url(url: &str) -> String {
     }
 }
 
+/// Normaliza cualquier URL antes de su descarga:
+/// - Para URLs de Discord: convierte WebP animados a GIF si aplica, remueve `size=...` y entidades `amp;`.
+/// - Para URLs generales: remueve fragmentos `#`, desescapa entidades HTML y elimina `size=...` residuales.
+pub fn normalize_url_for_download(url: &str) -> String {
+    if is_discord_cdn_url(url) {
+        return normalize_discord_url(url);
+    }
+
+    let unescaped = unescape_html_entities(url);
+    let without_fragment = unescaped.split('#').next().unwrap_or(&unescaped).trim();
+    let Some((base, query)) = without_fragment.split_once('?') else {
+        return without_fragment.to_string();
+    };
+
+    let kept_params: Vec<&str> = query
+        .split('&')
+        .map(|param| param.trim().trim_start_matches("amp;").trim())
+        .filter(|clean_param| {
+            let key = clean_param.split('=').next().unwrap_or("").trim();
+            !key.is_empty() && !key.eq_ignore_ascii_case("size")
+        })
+        .collect();
+
+    if kept_params.is_empty() {
+        base.to_string()
+    } else {
+        format!("{}?{}", base, kept_params.join("&"))
+    }
+}
+
 /// Detecta si una URL apunta directamente a un archivo de imagen o endpoint de imagen conocido
 pub fn is_direct_image_url(url: &str) -> bool {
     let clean = url.trim();
@@ -799,6 +829,24 @@ mod tests {
         assert_eq!(
             normalize_discord_url("https://cdn.discordapp.com/avatars/1/a_hash.webp?size=128"),
             "https://cdn.discordapp.com/avatars/1/a_hash.gif"
+        );
+    }
+
+    #[test]
+    fn test_normalize_url_for_download() {
+        assert_eq!(
+            normalize_url_for_download(
+                "https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=96&animated=true"
+            ),
+            "https://cdn.discordapp.com/emojis/1539337442191212695.gif"
+        );
+        assert_eq!(
+            normalize_url_for_download("https://example.com/image.png?size=32&v=1"),
+            "https://example.com/image.png?v=1"
+        );
+        assert_eq!(
+            normalize_url_for_download("https://example.com/image.webp?size=100#frag"),
+            "https://example.com/image.webp"
         );
     }
 

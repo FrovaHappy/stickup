@@ -1,31 +1,51 @@
 <script lang="ts">
-  import { X, Download, Loader2 } from '@lucide/svelte';
-  import { setAskBeforePaste } from '$lib/stores/preferences';
+  import { X, Download, Loader2 } from "@lucide/svelte";
+  import { setAskBeforePaste } from "$lib/stores/preferences";
+  import {
+    pasteConfirmState,
+    closePasteConfirmation,
+  } from "$lib/services/clipboardManager";
 
-  export let open = false;
-  export let previewUrl: string = '';
-  export let name: string = '';
-  export let isBusy = false;
-  export let onSave: (dontAskAgain: boolean) => Promise<void> | void;
-  export let onCancel: () => void;
+  export let open: boolean = false;
+  export let previewUrl: string = "";
+  export let name: string = "";
+  export let isBusy: boolean = false;
+  export let onSave: ((dontAskAgain: boolean) => Promise<void> | void) | null =
+    null;
+  export let onCancel: (() => void) | null = null;
 
   let dontAskAgain = false;
 
+  $: effectiveOpen = open || $pasteConfirmState.open;
+  $: effectivePreviewUrl = previewUrl || $pasteConfirmState.previewUrl;
+  $: effectiveName = name || $pasteConfirmState.name;
+  $: effectiveIsBusy = isBusy || $pasteConfirmState.isBusy;
+
   async function handleSaveClick() {
-    if (isBusy) return;
+    if (effectiveIsBusy) return;
     if (dontAskAgain) {
       setAskBeforePaste(false);
     }
-    await onSave(dontAskAgain);
+    if (onSave) {
+      await onSave(dontAskAgain);
+    } else if ($pasteConfirmState.onSave) {
+      await $pasteConfirmState.onSave(dontAskAgain);
+    }
   }
 
   function handleCloseClick() {
-    if (isBusy) return;
-    onCancel();
+    if (effectiveIsBusy) return;
+    if (onCancel) {
+      onCancel();
+    } else if ($pasteConfirmState.onCancel) {
+      $pasteConfirmState.onCancel();
+    } else {
+      closePasteConfirmation();
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (open && e.key === 'Escape') {
+    if (effectiveOpen && e.key === "Escape") {
       handleCloseClick();
     }
   }
@@ -33,7 +53,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-{#if open}
+{#if effectiveOpen}
   <div
     class="paste-popup-card"
     role="dialog"
@@ -44,7 +64,7 @@
       type="button"
       class="close-btn"
       aria-label="Cerrar y descartar"
-      disabled={isBusy}
+      disabled={effectiveIsBusy}
       on:click={handleCloseClick}
     >
       <X size={18} strokeWidth={2.2} />
@@ -53,8 +73,12 @@
     <h3 class="popup-title">Se Pegó este Elemento</h3>
 
     <div class="preview-container">
-      {#if previewUrl}
-        <img src={previewUrl} alt={name || 'Elemento pegado'} class="preview-img" />
+      {#if effectivePreviewUrl}
+        <img
+          src={effectivePreviewUrl}
+          alt={effectiveName || "Elemento pegado"}
+          class="preview-img"
+        />
       {/if}
     </div>
 
@@ -62,7 +86,7 @@
       <input
         type="checkbox"
         bind:checked={dontAskAgain}
-        disabled={isBusy}
+        disabled={effectiveIsBusy}
         class="custom-checkbox"
       />
       <span class="checkbox-label">No volver a preguntar</span>
@@ -71,10 +95,10 @@
     <button
       type="button"
       class="save-btn"
-      disabled={isBusy}
+      disabled={effectiveIsBusy}
       on:click={handleSaveClick}
     >
-      {#if isBusy}
+      {#if effectiveIsBusy}
         <Loader2 size={18} class="spin-icon" />
         <span>Guardando...</span>
       {:else}
@@ -95,7 +119,9 @@
     border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     border-radius: 14px;
     padding: 16px 18px 18px;
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    box-shadow:
+      0 12px 36px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(255, 255, 255, 0.04);
     z-index: 9999;
     display: flex;
     flex-direction: column;
@@ -128,7 +154,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.15s ease, background 0.15s ease;
+    transition:
+      color 0.15s ease,
+      background 0.15s ease;
   }
 
   .close-btn:hover:not(:disabled) {
@@ -205,7 +233,10 @@
     border-radius: 8px;
     cursor: pointer;
     box-shadow: 0 4px 14px rgba(249, 115, 22, 0.32);
-    transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    transition:
+      background 0.15s ease,
+      transform 0.1s ease,
+      box-shadow 0.15s ease;
   }
 
   .save-btn:hover:not(:disabled) {
@@ -236,4 +267,3 @@
     }
   }
 </style>
-

@@ -5,10 +5,10 @@
   import { House, Settings, Plus, ScanSearch } from "@lucide/svelte";
   import { Logo, Toast } from "$lib/components/system-ui";
   import AddEmoteModal from "$lib/components/AddEmoteModal.svelte";
+  import PasteConfirmPopup from "$lib/components/PasteConfirmPopup.svelte";
   import UpdateModal from "$lib/components/UpdateModal.svelte";
   import { checkForUpdates, availableUpdate } from "$lib/stores/updater";
-
-  let addModalOpen = false;
+  import { isAddModalOpen, openAddModal } from "$lib/services/clipboardManager";
 
   onMount(() => {
     // Comprobación periódica no invasiva al inicio (respetando margen estricto de 24h)
@@ -44,10 +44,10 @@
       <button
         type="button"
         class="nav-btn add-btn"
-        class:active={addModalOpen}
+        class:active={$isAddModalOpen}
         title="Cargar nuevo emote"
         aria-label="Cargar nuevo emote"
-        on:click={() => (addModalOpen = true)}
+        on:click={openAddModal}
       >
         <Plus size={22} strokeWidth={2.4} />
       </button>
@@ -78,7 +78,8 @@
     <slot />
   </main>
 
-  <AddEmoteModal bind:isOpen={addModalOpen} customTrigger />
+  <AddEmoteModal bind:isOpen={$isAddModalOpen} customTrigger />
+  <PasteConfirmPopup />
   <UpdateModal />
   <Toast />
 </div>

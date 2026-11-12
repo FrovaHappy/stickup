@@ -232,26 +232,7 @@ fn encode_animated_webp_to_gif_bytes(
 }
 
 fn normalize_download_url(url: &str) -> String {
-    let unescaped = crate::services::scanner::unescape_html_entities(url);
-    let without_fragment = unescaped.split('#').next().unwrap_or(&unescaped).trim();
-    let Some((base, query)) = without_fragment.split_once('?') else {
-        return without_fragment.to_string();
-    };
-
-    let kept_params: Vec<&str> = query
-        .split('&')
-        .map(|param| param.trim().trim_start_matches("amp;").trim())
-        .filter(|clean_param| {
-            let key = clean_param.split('=').next().unwrap_or("").trim();
-            !key.is_empty() && !key.eq_ignore_ascii_case("size")
-        })
-        .collect();
-
-    if kept_params.is_empty() {
-        base.to_string()
-    } else {
-        format!("{}?{}", base, kept_params.join("&"))
-    }
+    crate::services::scanner::normalize_url_for_download(url)
 }
 
 fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, String> {
@@ -365,22 +346,7 @@ fn save_raw_bytes_as_emote(bytes: &[u8], emote_name: &str) -> Result<Emote, Stri
 }
 
 fn infer_name_from_url(url: &str) -> String {
-    let without_query = url.split('?').next().unwrap_or(url).split('#').next().unwrap_or(url);
-    let last_segment = without_query
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("emote");
-    let stem = Path::new(last_segment)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("emote")
-        .trim();
-    if stem.is_empty() {
-        "emote".to_string()
-    } else {
-        stem.to_string()
-    }
+    crate::services::scanner::suggest_name(url, None)
 }
 
 #[tauri::command]
@@ -1221,20 +1187,17 @@ pub fn encode_base64(bytes: &[u8]) -> String {
     out
 }
 
-#[tauri::command]
-pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
-    let payload = match clipboard::read_clipboard_payload() {
-        Ok(p) => p,
-        Err(_) => return Ok(ClipboardInspectResult::default()),
-    };
-
+pub fn inspect_clipboard_payload(
+    payload: &ClipboardPayload,
+    conn_opt: Option<&Connection>,
+) -> Result<ClipboardInspectResult, String> {
     match payload {
         ClipboardPayload::LocalPaths(paths) => {
-            let conn = match ensure_db() {
-                Ok(c) => c,
-                Err(_) => return Ok(ClipboardInspectResult::default()),
+            let conn = match conn_opt {
+                Some(c) => c,
+                None => return Ok(ClipboardInspectResult::default()),
             };
-            let dir = get_active_emotes_dir(&conn);
+            let dir = get_active_emotes_dir(conn);
             let abs_dir = dir.canonicalize().unwrap_or(dir);
 
             for p in paths {
@@ -1251,7 +1214,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
                 }
 
                 // Verificar si ya existe en la base de datos o en la carpeta de emotes
-                let norm_p = normalize_path(&p);
+                let norm_p = normalize_path(p);
                 let existing_name: Option<String> = conn
                     .query_row(
                         "SELECT name FROM emotes WHERE path = ?1 OR path = ?2",
@@ -1270,7 +1233,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
                 };
 
                 if existing_name.is_some() || is_in_active_dir {
-                    let stem = extract_stem(&p);
+                    let stem = extract_stem(p);
                     return Ok(ClipboardInspectResult {
                         has_image: true,
                         is_duplicate: true,
@@ -1282,7 +1245,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
                 }
 
                 // No es duplicado: generar preview data URL
-                if let Ok(bytes) = fs::read(&p) {
+                if let Ok(bytes) = fs::read(p) {
                     let mime = match ext.as_str() {
                         "png" => "image/png",
                         "gif" => "image/gif",
@@ -1291,7 +1254,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
                     };
                     let b64 = encode_base64(&bytes);
                     let preview = format!("data:{};base64,{}", mime, b64);
-                    let stem = extract_stem(&p);
+                    let stem = extract_stem(p);
                     return Ok(ClipboardInspectResult {
                         has_image: true,
                         is_duplicate: false,
@@ -1305,7 +1268,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
             Ok(ClipboardInspectResult::default())
         }
         ClipboardPayload::RawImageBytes(bytes) => {
-            let guessed = match image::guess_format(&bytes) {
+            let guessed = match image::guess_format(bytes) {
                 Ok(g) => g,
                 Err(_) => return Ok(ClipboardInspectResult::default()),
             };
@@ -1316,7 +1279,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
                 ImageFormat::Jpeg => ("image/jpeg", "jpg"),
                 _ => return Ok(ClipboardInspectResult::default()),
             };
-            let b64 = encode_base64(&bytes);
+            let b64 = encode_base64(bytes);
             let preview = format!("data:{};base64,{}", mime, b64);
             Ok(ClipboardInspectResult {
                 has_image: true,
@@ -1333,7 +1296,7 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
             width,
             height,
         } => {
-            let img_buf = match image::RgbaImage::from_raw(width, height, rgba) {
+            let img_buf = match image::RgbaImage::from_raw(*width, *height, rgba.clone()) {
                 Some(b) => b,
                 None => return Ok(ClipboardInspectResult::default()),
             };
@@ -1354,8 +1317,64 @@ pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
                 format: Some("webp".to_string()),
             })
         }
-        ClipboardPayload::TextUrl(_) => Ok(ClipboardInspectResult::default()),
+        ClipboardPayload::TextUrl(url) => {
+            let clean_url = url.trim();
+            if crate::services::net::validate_public_http_url_syntax(clean_url).is_err() {
+                return Ok(ClipboardInspectResult::default());
+            }
+
+            if crate::services::scanner::is_direct_image_url(clean_url) {
+                let suggested = crate::services::scanner::suggest_name(clean_url, None);
+                let normalized = crate::services::scanner::normalize_url_for_download(clean_url);
+                let fmt = crate::services::scanner::infer_format(&normalized)
+                    .or_else(|| crate::services::scanner::infer_format(clean_url));
+
+                let existing_name: Option<String> = if let Some(conn) = conn_opt {
+                    conn.query_row(
+                        "SELECT name FROM emotes WHERE LOWER(name) = LOWER(?1)",
+                        params![suggested],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None)
+                } else {
+                    None
+                };
+
+                if let Some(name) = existing_name {
+                    return Ok(ClipboardInspectResult {
+                        has_image: true,
+                        is_duplicate: true,
+                        duplicate_name: Some(name),
+                        preview_data_url: None,
+                        suggested_name: Some(suggested),
+                        format: fmt,
+                    });
+                }
+
+                return Ok(ClipboardInspectResult {
+                    has_image: true,
+                    is_duplicate: false,
+                    duplicate_name: None,
+                    preview_data_url: Some(clean_url.to_string()),
+                    suggested_name: Some(suggested),
+                    format: fmt,
+                });
+            }
+
+            Ok(ClipboardInspectResult::default())
+        }
     }
+}
+
+#[tauri::command]
+pub fn inspect_clipboard() -> Result<ClipboardInspectResult, String> {
+    let payload = match clipboard::read_clipboard_payload() {
+        Ok(p) => p,
+        Err(_) => return Ok(ClipboardInspectResult::default()),
+    };
+    let conn = ensure_db().ok();
+    inspect_clipboard_payload(&payload, conn.as_ref())
 }
 
 #[tauri::command]
@@ -2734,11 +2753,11 @@ mod tests {
     fn test_infer_name_from_url() {
         assert_eq!(
             infer_name_from_url("https://cdn.example.com/emotes/pogchamp.png?v=123#main"),
-            "pogchamp"
+            "Pogchamp"
         );
         assert_eq!(
-            infer_name_from_url("https://cdn.example.com/"),
-            "cdn.example"
+            infer_name_from_url("https://cdn.discordapp.com/emojis/1539337442191212695.webp"),
+            "DiscordEmote1539337442191212695"
         );
     }
 
@@ -2778,7 +2797,7 @@ mod tests {
             normalize_download_url(
                 "https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=32&animated=true"
             ),
-            "https://cdn.discordapp.com/emojis/1539337442191212695.webp?animated=true"
+            "https://cdn.discordapp.com/emojis/1539337442191212695.gif"
         );
         assert_eq!(
             normalize_download_url(
@@ -2790,7 +2809,7 @@ mod tests {
             normalize_download_url(
                 "https://cdn.discordapp.com/emojis/123.webp?quality=lossless&size=48&animated=true"
             ),
-            "https://cdn.discordapp.com/emojis/123.webp?quality=lossless&animated=true"
+            "https://cdn.discordapp.com/emojis/123.gif?quality=lossless"
         );
         assert_eq!(
             normalize_download_url("https://example.com/emote.webp?v=1"),
@@ -2800,13 +2819,72 @@ mod tests {
             normalize_download_url(
                 "https://cdn.discordapp.com/emojis/808565687815372840.webp?amp;animated=true"
             ),
-            "https://cdn.discordapp.com/emojis/808565687815372840.webp?animated=true"
+            "https://cdn.discordapp.com/emojis/808565687815372840.gif"
         );
         assert_eq!(
             normalize_download_url(
                 "https://cdn.discordapp.com/emojis/808565687815372840.webp?size=96&amp;animated=true"
             ),
-            "https://cdn.discordapp.com/emojis/808565687815372840.webp?animated=true"
+            "https://cdn.discordapp.com/emojis/808565687815372840.gif"
+        );
+    }
+
+    #[test]
+    fn test_inspect_clipboard_payload_with_discord_url() {
+        let payload = ClipboardPayload::TextUrl(
+            "https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=96&animated=true"
+                .to_string(),
+        );
+        let res = inspect_clipboard_payload(&payload, None).expect("inspect clipboard");
+        assert!(res.has_image);
+        assert!(!res.is_duplicate);
+        assert_eq!(
+            res.suggested_name.as_deref(),
+            Some("DiscordEmote1539337442191212695")
+        );
+        assert_eq!(res.format.as_deref(), Some("gif"));
+        assert_eq!(
+            res.preview_data_url.as_deref(),
+            Some("https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=96&animated=true")
+        );
+    }
+
+    #[test]
+    fn test_inspect_clipboard_payload_rejects_non_image_url() {
+        let payload = ClipboardPayload::TextUrl("https://example.com/not-an-image".to_string());
+        let res = inspect_clipboard_payload(&payload, None).expect("inspect clipboard");
+        assert!(!res.has_image);
+    }
+
+    #[test]
+    fn test_inspect_clipboard_payload_detects_duplicate_by_name() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE emotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                tag TEXT,
+                path TEXT NOT NULL,
+                original_width INTEGER,
+                original_height INTEGER,
+                format TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO emotes (name, path, format, created_at)
+            VALUES ('DiscordEmote1539337442191212695', 'dummy.gif', 'gif', '2026-01-01');",
+        )
+        .expect("setup table");
+
+        let payload = ClipboardPayload::TextUrl(
+            "https://cdn.discordapp.com/emojis/1539337442191212695.webp?size=96&animated=true"
+                .to_string(),
+        );
+        let res = inspect_clipboard_payload(&payload, Some(&conn)).expect("inspect clipboard");
+        assert!(res.has_image);
+        assert!(res.is_duplicate);
+        assert_eq!(
+            res.duplicate_name.as_deref(),
+            Some("DiscordEmote1539337442191212695")
         );
     }
 
