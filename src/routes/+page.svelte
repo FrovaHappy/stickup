@@ -23,6 +23,7 @@
   let selected: Emote | null = null;
   let emoteToDelete: Emote | null = null;
   let searchQuery = '';
+  let selectedTags: string[] = [];
   let contextMenuOpen = false;
   let contextMenuPos = { x: 0, y: 0 };
   let contextMenuEmote: Emote | null = null;
@@ -136,6 +137,30 @@
     const pascalQ = toPascalCase(rawQ).toLowerCase();
     let result = filterEmotesByFormat($emotes, $formatFilter);
 
+    if (selectedTags.length > 0) {
+      const isUntaggedSelected = selectedTags.some(
+        (t) => t === '__untagged__' || t.toLowerCase() === 'sin tag'
+      );
+      const regularTags = selectedTags
+        .filter((t) => t !== '__untagged__' && t.toLowerCase() !== 'sin tag')
+        .map((t) => t.toLowerCase());
+
+      result = result.filter((e) => {
+        const rawTags = (e.tag ?? '').trim();
+        const hasNoTags = !rawTags;
+        if (hasNoTags && isUntaggedSelected) {
+          return true;
+        }
+        if (regularTags.length > 0 && !hasNoTags) {
+          const emoteTags = rawTags
+            .split(',')
+            .map((t) => t.trim().toLowerCase());
+          return regularTags.some((selected) => emoteTags.includes(selected));
+        }
+        return false;
+      });
+    }
+
     if (q) {
       result = result.filter((e) => {
         const name = (e.name ?? '').toLowerCase();
@@ -241,7 +266,7 @@
 </script>
 
 <div class="home-view">
-  <MainHeader bind:searchQuery />
+  <MainHeader bind:searchQuery bind:selectedTags />
 
   <div class="grid-container">
     <EmoteGrid

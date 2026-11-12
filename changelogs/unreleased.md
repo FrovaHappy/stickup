@@ -1,6 +1,8 @@
 # Unreleased
 
 ### Added
+- Reordenamiento dinámico en la barra de tags para posicionar al inicio de la fila los tags seleccionados.
+- Barra horizontal de filtrado múltiple por tags con orden descendente, etiqueta de 'Sin tag', navegación con botones y arrastre con mouse.
 - Soporte para espacios en el nombre de base de datos de los emotes, manteniendo nombres de archivo compactos en disco.
 - Filtro de formato en la cabecera principal para alternar entre emotes animados (GIF), estáticos o todos.
 - Registro de historial de notificaciones persistido en local storage y menú de notificaciones con popover y badge en la cabecera del Home.
@@ -13,4 +15,5 @@
 - Migración integral de avisos locales y retroalimentación de copiado hacia el store unificado de toasts en toda la app.
 
 ### Fixed
+- Retroalimentación visual prominente y corrección de eventos de clic al seleccionar tags en la barra horizontal.
 - Eliminado remanente de aviso viejo tipo píldora en el modal de detalle del emote.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import {
     Search,
     X,
@@ -19,7 +20,11 @@
     CircleAlert,
     Images,
     Image,
-    Film
+    Film,
+    Tag,
+    TagX,
+    ChevronLeft,
+    ChevronRight,
   } from "@lucide/svelte";
   import {
     gridSize,
@@ -29,7 +34,11 @@
     formatFilter,
     setFormatFilter,
   } from "$lib/stores/preferences";
-  import type { GridSize, SortOption, EmoteFormatFilter } from "$lib/types/preferences";
+  import type {
+    GridSize,
+    SortOption,
+    EmoteFormatFilter,
+  } from "$lib/types/preferences";
   import { formatSearchQueryInput } from "$lib/utils/format";
   import {
     notifications,
@@ -38,10 +47,12 @@
     markAsRead,
     deleteNotification,
     clearNotifications,
-    formatTimeAgo
+    formatTimeAgo,
   } from "$lib/stores/notifications";
+  import emotes, { allTags } from "$lib/stores/emotes";
 
   export let searchQuery = "";
+  export let selectedTags: string[] = [];
 
   function handleSearchInput(e: Event) {
     const target = e.currentTarget as HTMLInputElement;
@@ -53,6 +64,184 @@
 
   function handleSearchBlur() {
     searchQuery = searchQuery.trim();
+  }
+
+  $: tagCounts = (() => {
+    const counts = new Map<string, number>();
+    for (const e of $emotes) {
+      if (e.tag) {
+        const parts = e.tag
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        for (const t of parts) {
+          const lower = t.toLowerCase();
+          counts.set(lower, (counts.get(lower) ?? 0) + 1);
+        }
+      }
+    }
+    return counts;
+  })();
+
+  $: untaggedCount = ($emotes || []).filter(
+    (e) => !e.tag || !e.tag.trim(),
+  ).length;
+
+  interface TagItem {
+    id: string;
+    label: string;
+    count: number;
+    isUntagged?: boolean;
+  }
+
+  $: displayedTags = (() => {
+    const items: TagItem[] = ($allTags || []).map((t) => ({
+      id: t,
+      label: t,
+      count: tagCounts.get(t.toLowerCase()) ?? 0,
+      isUntagged: false,
+    }));
+
+    if (untaggedCount > 0) {
+      items.push({
+        id: "__untagged__",
+        label: "Sin tag",
+        count: untaggedCount,
+        isUntagged: true,
+      });
+    }
+
+    return items.sort((a, b) => {
+      const aLower = a.id.toLowerCase();
+      const bLower = b.id.toLowerCase();
+      const aIdx = selectedTags.findIndex((t) => t.toLowerCase() === aLower);
+      const bIdx = selectedTags.findIndex((t) => t.toLowerCase() === bLower);
+      const aActive = aIdx !== -1;
+      const bActive = bIdx !== -1;
+
+      // 1. Elementos seleccionados se mueven al principio de la fila
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      // 2. Si ambos están seleccionados, mantener el orden de selección (más reciente primero)
+      if (aActive && bActive) {
+        return aIdx - bIdx;
+      }
+
+      // 3. Para elementos no seleccionados, "Sin tag" va al final
+      if (a.isUntagged) return 1;
+      if (b.isUntagged) return -1;
+
+      // 4. Elementos regulares no seleccionados: mayor cantidad a menor cantidad
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return a.label.localeCompare(b.label);
+    });
+  })();
+
+  let tagsScrollEl: HTMLElement | null = null;
+  let canScrollLeft = false;
+  let canScrollRight = false;
+  let isDraggingTags = false;
+  let dragStartX = 0;
+  let dragScrollLeft = 0;
+  let hasDragged = false;
+
+  function updateScrollButtons() {
+    if (!tagsScrollEl) return;
+    const { scrollLeft, scrollWidth, clientWidth } = tagsScrollEl;
+    canScrollLeft = scrollLeft > 2;
+    canScrollRight = scrollLeft + clientWidth < scrollWidth - 2;
+  }
+
+  function scrollTags(offset: number) {
+    if (!tagsScrollEl) return;
+    tagsScrollEl.scrollBy({ left: offset, behavior: "smooth" });
+    setTimeout(updateScrollButtons, 220);
+  }
+
+  function isTagActive(tag: string): boolean {
+    const lower = tag.toLowerCase();
+    return selectedTags.some((t) => t.toLowerCase() === lower);
+  }
+
+  function toggleTag(tag: string) {
+    if (hasDragged) return;
+    const lower = tag.toLowerCase();
+    const existingIdx = selectedTags.findIndex(
+      (t) => t.toLowerCase() === lower,
+    );
+    if (existingIdx !== -1) {
+      selectedTags = selectedTags.filter((_, i) => i !== existingIdx);
+    } else {
+      selectedTags = [tag, ...selectedTags];
+      if (tagsScrollEl) {
+        tagsScrollEl.scrollTo({ left: 0, behavior: "smooth" });
+        setTimeout(updateScrollButtons, 220);
+      }
+    }
+  }
+
+  function onTagsMouseUp() {
+    isDraggingTags = false;
+    setTimeout(() => {
+      hasDragged = false;
+    }, 50);
+  }
+
+  function onTagsMouseDown(e: MouseEvent) {
+    if (e.button !== 0 || !tagsScrollEl) return;
+    isDraggingTags = true;
+    hasDragged = false;
+    dragStartX = e.clientX;
+    dragScrollLeft = tagsScrollEl.scrollLeft;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isDraggingTags || !tagsScrollEl) return;
+      const walk = ev.clientX - dragStartX;
+      if (Math.abs(walk) > 5) {
+        hasDragged = true;
+      }
+      if (hasDragged) {
+        tagsScrollEl.scrollLeft = dragScrollLeft - walk;
+        updateScrollButtons();
+      }
+    };
+
+    const onUp = () => {
+      onTagsMouseUp();
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  function tagsWheelAction(node: HTMLElement) {
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY !== 0 || e.deltaX !== 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        node.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+        updateScrollButtons();
+      }
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return {
+      destroy() {
+        node.removeEventListener("wheel", onWheel);
+      },
+    };
+  }
+
+  onMount(() => {
+    updateScrollButtons();
+  });
+
+  $: if (tagsScrollEl && displayedTags.length > 0) {
+    setTimeout(updateScrollButtons, 50);
   }
 
   let filterMenuOpen = false;
@@ -183,313 +372,554 @@
   }
 </script>
 
-<svelte:window on:click={closeAllMenus} />
+<svelte:window
+  on:click={closeAllMenus}
+  on:mouseup={onTagsMouseUp}
+  on:resize={updateScrollButtons}
+/>
 
 <header class="main-header">
-  <div class="header-left-spacer"></div>
+  <div class="header-main-row">
+    <div class="header-left-spacer"></div>
 
-  <!-- Barra de búsqueda central en formato píldora -->
-  <div class="search-wrapper">
-    <div class="search-pill">
-      <Search size={16} class="search-icon" />
-      <input
-        type="text"
-        class="search-input"
-        placeholder="Busca por nombre o por tags..."
-        value={searchQuery}
-        on:input={handleSearchInput}
-        on:blur={handleSearchBlur}
-      />
-      {#if searchQuery.trim()}
+    <!-- Barra de búsqueda central en formato píldora -->
+    <div class="search-wrapper">
+      <div class="search-pill">
+        <Search size={16} class="search-icon" />
+        <input
+          type="text"
+          class="search-input"
+          placeholder="Busca por nombre o por tags..."
+          value={searchQuery}
+          on:input={handleSearchInput}
+          on:blur={handleSearchBlur}
+        />
+        {#if searchQuery.trim()}
+          <button
+            type="button"
+            class="clear-btn"
+            title="Borrar búsqueda"
+            aria-label="Borrar búsqueda"
+            on:click={() => (searchQuery = "")}
+          >
+            <X size={14} />
+          </button>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Botones de acción a la derecha: Filtro, Ordenar y Tamaño de Grid -->
+    <div class="header-actions">
+      <!-- Menú de Filtro de Formato (Todos / Estáticos / GIFs) -->
+      <div class="action-dropdown-container">
         <button
           type="button"
-          class="clear-btn"
-          title="Borrar búsqueda"
-          aria-label="Borrar búsqueda"
-          on:click={() => (searchQuery = "")}
+          class="action-btn"
+          class:active={filterMenuOpen || $formatFilter !== "all"}
+          title={`Filtro: ${currentFilterItem.label}`}
+          aria-label={`Filtro: ${currentFilterItem.label}`}
+          on:click={toggleFilterMenu}
         >
-          <X size={14} />
+          <CurrentFilterIcon size={20} strokeWidth={2} />
+          {#if $formatFilter !== "all"}
+            <span class="active-filter-dot" aria-hidden="true"></span>
+          {/if}
         </button>
-      {/if}
-    </div>
-  </div>
 
-  <!-- Botones de acción a la derecha: Filtro, Ordenar y Tamaño de Grid -->
-  <div class="header-actions">
-    <!-- Menú de Filtro de Formato (Todos / Estáticos / GIFs) -->
-    <div class="action-dropdown-container">
-      <button
-        type="button"
-        class="action-btn"
-        class:active={filterMenuOpen || $formatFilter !== "all"}
-        title={`Filtro: ${currentFilterItem.label}`}
-        aria-label={`Filtro: ${currentFilterItem.label}`}
-        on:click={toggleFilterMenu}
-      >
-        <CurrentFilterIcon size={20} strokeWidth={2} />
-        {#if $formatFilter !== "all"}
-          <span class="active-filter-dot" aria-hidden="true"></span>
-        {/if}
-      </button>
-
-      {#if filterMenuOpen}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-        <div
-          class="dropdown-popover filter-popover"
-          on:click|stopPropagation
-          role="menu"
-          tabindex="-1"
-        >
-          <div class="popover-header">Filtrar por formato</div>
-          {#each FILTER_ITEMS as opt}
-            {@const OptionIcon = opt.icon}
-            <button
-              type="button"
-              class="popover-item"
-              class:selected={$formatFilter === opt.id}
-              role="menuitem"
-              on:click={() => selectFilter(opt.id)}
-            >
-              <div class="popover-item-left">
-                <OptionIcon
-                  size={18}
-                  strokeWidth={2}
-                  class={`sort-option-icon ${$formatFilter === opt.id ? "is-active" : ""}`}
-                />
-                <div class="item-text">
-                  <span class="item-title">{opt.label}</span>
-                  <span class="item-desc">{opt.desc}</span>
+        {#if filterMenuOpen}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <div
+            class="dropdown-popover filter-popover"
+            on:click|stopPropagation
+            role="menu"
+            tabindex="-1"
+          >
+            <div class="popover-header">Filtrar por formato</div>
+            {#each FILTER_ITEMS as opt}
+              {@const OptionIcon = opt.icon}
+              <button
+                type="button"
+                class="popover-item"
+                class:selected={$formatFilter === opt.id}
+                role="menuitem"
+                on:click={() => selectFilter(opt.id)}
+              >
+                <div class="popover-item-left">
+                  <OptionIcon
+                    size={18}
+                    strokeWidth={2}
+                    class={`sort-option-icon ${$formatFilter === opt.id ? "is-active" : ""}`}
+                  />
+                  <div class="item-text">
+                    <span class="item-title">{opt.label}</span>
+                    <span class="item-desc">{opt.desc}</span>
+                  </div>
                 </div>
-              </div>
-              {#if $formatFilter === opt.id}
-                <Check size={16} class="check-icon" />
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Menú de Ordenamiento -->
-    <div class="action-dropdown-container">
-      <button
-        type="button"
-        class="action-btn"
-        class:active={sortMenuOpen}
-        title={`Ordenar: ${currentSortItem.label}`}
-        aria-label={`Ordenar: ${currentSortItem.label}`}
-        on:click={toggleSortMenu}
-      >
-        <CurrentSortIcon size={20} strokeWidth={2} />
-      </button>
-
-      {#if sortMenuOpen}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-        <div
-          class="dropdown-popover sort-popover"
-          on:click|stopPropagation
-          role="menu"
-          tabindex="-1"
-        >
-          <div class="popover-header">Ordenar por</div>
-          {#each SORT_ITEMS as opt}
-            {@const OptionIcon = opt.icon}
-            <button
-              type="button"
-              class="popover-item"
-              class:selected={$sortOption === opt.id}
-              role="menuitem"
-              on:click={() => selectSort(opt.id)}
-            >
-              <div class="popover-item-left">
-                <OptionIcon
-                  size={18}
-                  strokeWidth={2}
-                  class={`sort-option-icon ${$sortOption === opt.id ? "is-active" : ""}`}
-                />
-                <div class="item-text">
-                  <span class="item-title">{opt.label}</span>
-                  <span class="item-desc">{opt.desc}</span>
-                </div>
-              </div>
-              {#if $sortOption === opt.id}
-                <Check size={16} class="check-icon" />
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Menú de Tamaño de Grid -->
-    <div class="action-dropdown-container">
-      <button
-        type="button"
-        class="action-btn"
-        class:active={gridMenuOpen}
-        title="Cambiar tamaño de grid"
-        aria-label="Cambiar tamaño de grid"
-        on:click={toggleGridMenu}
-      >
-        <Grid2x2 size={20} strokeWidth={2} />
-      </button>
-
-      {#if gridMenuOpen}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-        <div
-          class="dropdown-popover right-aligned"
-          on:click|stopPropagation
-          role="menu"
-          tabindex="-1"
-        >
-          <div class="popover-header">Tamaño del grid</div>
-          {#each GRID_SIZES as size}
-            <button
-              type="button"
-              class="popover-item"
-              class:selected={$gridSize === size.id}
-              role="menuitem"
-              on:click={() => selectGrid(size.id)}
-            >
-              <div class="item-text">
-                <span class="item-title">{size.label}</span>
-                <span class="item-desc">{size.desc}</span>
-              </div>
-              {#if $gridSize === size.id}
-                <Check size={16} class="check-icon" />
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Menú de Registro de Notificaciones -->
-    <div class="action-dropdown-container">
-      <button
-        type="button"
-        class="action-btn"
-        class:active={notificationsMenuOpen}
-        title="Registro de notificaciones"
-        aria-label="Registro de notificaciones"
-        on:click={toggleNotificationsMenu}
-      >
-        <Bell size={20} strokeWidth={2} />
-        {#if $unreadCount > 0}
-          <span class="unread-badge">{$unreadCount > 9 ? '9+' : $unreadCount}</span>
+                {#if $formatFilter === opt.id}
+                  <Check size={16} class="check-icon" />
+                {/if}
+              </button>
+            {/each}
+          </div>
         {/if}
-      </button>
+      </div>
 
-      {#if notificationsMenuOpen}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-        <div
-          class="dropdown-popover right-aligned notifications-popover"
-          on:click|stopPropagation
-          role="menu"
-          tabindex="-1"
+      <!-- Menú de Ordenamiento -->
+      <div class="action-dropdown-container">
+        <button
+          type="button"
+          class="action-btn"
+          class:active={sortMenuOpen}
+          title={`Ordenar: ${currentSortItem.label}`}
+          aria-label={`Ordenar: ${currentSortItem.label}`}
+          on:click={toggleSortMenu}
         >
-          <div class="notif-header">
-            <div class="notif-header-left">
-              <span class="notif-header-title">Notificaciones</span>
+          <CurrentSortIcon size={20} strokeWidth={2} />
+        </button>
+
+        {#if sortMenuOpen}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <div
+            class="dropdown-popover sort-popover"
+            on:click|stopPropagation
+            role="menu"
+            tabindex="-1"
+          >
+            <div class="popover-header">Ordenar por</div>
+            {#each SORT_ITEMS as opt}
+              {@const OptionIcon = opt.icon}
+              <button
+                type="button"
+                class="popover-item"
+                class:selected={$sortOption === opt.id}
+                role="menuitem"
+                on:click={() => selectSort(opt.id)}
+              >
+                <div class="popover-item-left">
+                  <OptionIcon
+                    size={18}
+                    strokeWidth={2}
+                    class={`sort-option-icon ${$sortOption === opt.id ? "is-active" : ""}`}
+                  />
+                  <div class="item-text">
+                    <span class="item-title">{opt.label}</span>
+                    <span class="item-desc">{opt.desc}</span>
+                  </div>
+                </div>
+                {#if $sortOption === opt.id}
+                  <Check size={16} class="check-icon" />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Menú de Tamaño de Grid -->
+      <div class="action-dropdown-container">
+        <button
+          type="button"
+          class="action-btn"
+          class:active={gridMenuOpen}
+          title="Cambiar tamaño de grid"
+          aria-label="Cambiar tamaño de grid"
+          on:click={toggleGridMenu}
+        >
+          <Grid2x2 size={20} strokeWidth={2} />
+        </button>
+
+        {#if gridMenuOpen}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <div
+            class="dropdown-popover right-aligned"
+            on:click|stopPropagation
+            role="menu"
+            tabindex="-1"
+          >
+            <div class="popover-header">Tamaño del grid</div>
+            {#each GRID_SIZES as size}
+              <button
+                type="button"
+                class="popover-item"
+                class:selected={$gridSize === size.id}
+                role="menuitem"
+                on:click={() => selectGrid(size.id)}
+              >
+                <div class="item-text">
+                  <span class="item-title">{size.label}</span>
+                  <span class="item-desc">{size.desc}</span>
+                </div>
+                {#if $gridSize === size.id}
+                  <Check size={16} class="check-icon" />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Menú de Registro de Notificaciones -->
+      <div class="action-dropdown-container">
+        <button
+          type="button"
+          class="action-btn"
+          class:active={notificationsMenuOpen}
+          title="Registro de notificaciones"
+          aria-label="Registro de notificaciones"
+          on:click={toggleNotificationsMenu}
+        >
+          <Bell size={20} strokeWidth={2} />
+          {#if $unreadCount > 0}
+            <span class="unread-badge"
+              >{$unreadCount > 9 ? "9+" : $unreadCount}</span
+            >
+          {/if}
+        </button>
+
+        {#if notificationsMenuOpen}
+          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+          <div
+            class="dropdown-popover right-aligned notifications-popover"
+            on:click|stopPropagation
+            role="menu"
+            tabindex="-1"
+          >
+            <div class="notif-header">
+              <div class="notif-header-left">
+                <span class="notif-header-title">Notificaciones</span>
+                {#if $notifications.length > 0}
+                  <span class="notif-count-pill">{$notifications.length}</span>
+                {/if}
+              </div>
               {#if $notifications.length > 0}
-                <span class="notif-count-pill">{$notifications.length}</span>
+                <div class="notif-header-actions">
+                  {#if $unreadCount > 0}
+                    <button
+                      type="button"
+                      class="notif-action-icon-btn"
+                      title="Marcar todas como leídas"
+                      aria-label="Marcar todas como leídas"
+                      on:click={markAllAsRead}
+                    >
+                      <CheckCheck size={16} strokeWidth={2} />
+                    </button>
+                  {/if}
+                  <button
+                    type="button"
+                    class="notif-action-icon-btn danger"
+                    title="Vaciar historial"
+                    aria-label="Vaciar historial"
+                    on:click={clearNotifications}
+                  >
+                    <Trash2 size={15} strokeWidth={2} />
+                  </button>
+                </div>
               {/if}
             </div>
-            {#if $notifications.length > 0}
-              <div class="notif-header-actions">
-                {#if $unreadCount > 0}
-                  <button
-                    type="button"
-                    class="notif-action-icon-btn"
-                    title="Marcar todas como leídas"
-                    aria-label="Marcar todas como leídas"
-                    on:click={markAllAsRead}
+
+            <div class="notif-list">
+              {#if $notifications.length === 0}
+                <div class="notif-empty-state">
+                  <BellOff
+                    size={30}
+                    strokeWidth={1.8}
+                    class="notif-empty-icon"
+                  />
+                  <span class="notif-empty-title">Sin notificaciones</span>
+                  <span class="notif-empty-subtitle"
+                    >El historial de avisos y copias aparecerá aquí.</span
                   >
-                    <CheckCheck size={16} strokeWidth={2} />
-                  </button>
-                {/if}
-                <button
-                  type="button"
-                  class="notif-action-icon-btn danger"
-                  title="Vaciar historial"
-                  aria-label="Vaciar historial"
-                  on:click={clearNotifications}
-                >
-                  <Trash2 size={15} strokeWidth={2} />
-                </button>
-              </div>
-            {/if}
-          </div>
-
-          <div class="notif-list">
-            {#if $notifications.length === 0}
-              <div class="notif-empty-state">
-                <BellOff size={30} strokeWidth={1.8} class="notif-empty-icon" />
-                <span class="notif-empty-title">Sin notificaciones</span>
-                <span class="notif-empty-subtitle">El historial de avisos y copias aparecerá aquí.</span>
-              </div>
-            {:else}
-              {#each $notifications as notif (notif.id)}
-                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-                <div
-                  class="notif-item"
-                  class:unread={!notif.read}
-                  role="button"
-                  tabindex="0"
-                  on:click={() => markAsRead(notif.id)}
-                >
-                  <div class="notif-item-icon-box {notif.variant}">
-                    {#if notif.variant === 'error'}
-                      <CircleAlert size={16} strokeWidth={2} />
-                    {:else if notif.variant === 'warning'}
-                      <TriangleAlert size={16} strokeWidth={2} />
-                    {:else if notif.variant === 'info'}
-                      <Info size={16} strokeWidth={2} />
-                    {:else}
-                      <CircleCheck size={16} strokeWidth={2} />
-                    {/if}
-                  </div>
-
-                  <div class="notif-item-body">
-                    <div class="notif-item-top">
-                      <span class="notif-item-title">{notif.title}</span>
-                      <span class="notif-item-time">{formatTimeAgo(notif.timestamp)}</span>
-                    </div>
-                    <p class="notif-item-message">{notif.message}</p>
-                  </div>
-
-                  <button
-                    type="button"
-                    class="notif-item-delete"
-                    title="Eliminar notificación"
-                    aria-label="Eliminar notificación"
-                    on:click|stopPropagation={() => deleteNotification(notif.id)}
-                  >
-                    <X size={13} strokeWidth={2} />
-                  </button>
                 </div>
-              {/each}
-            {/if}
+              {:else}
+                {#each $notifications as notif (notif.id)}
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+                  <div
+                    class="notif-item"
+                    class:unread={!notif.read}
+                    role="button"
+                    tabindex="0"
+                    on:click={() => markAsRead(notif.id)}
+                  >
+                    <div class="notif-item-icon-box {notif.variant}">
+                      {#if notif.variant === "error"}
+                        <CircleAlert size={16} strokeWidth={2} />
+                      {:else if notif.variant === "warning"}
+                        <TriangleAlert size={16} strokeWidth={2} />
+                      {:else if notif.variant === "info"}
+                        <Info size={16} strokeWidth={2} />
+                      {:else}
+                        <CircleCheck size={16} strokeWidth={2} />
+                      {/if}
+                    </div>
+
+                    <div class="notif-item-body">
+                      <div class="notif-item-top">
+                        <span class="notif-item-title">{notif.title}</span>
+                        <span class="notif-item-time"
+                          >{formatTimeAgo(notif.timestamp)}</span
+                        >
+                      </div>
+                      <p class="notif-item-message">{notif.message}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="notif-item-delete"
+                      title="Eliminar notificación"
+                      aria-label="Eliminar notificación"
+                      on:click|stopPropagation={() =>
+                        deleteNotification(notif.id)}
+                    >
+                      <X size={13} strokeWidth={2} />
+                    </button>
+                  </div>
+                {/each}
+              {/if}
+            </div>
           </div>
-        </div>
-      {/if}
+        {/if}
+      </div>
     </div>
   </div>
+
+  {#if displayedTags.length > 0}
+    <div class="tags-bar-row">
+      <button
+        type="button"
+        class="tag-nav-btn left"
+        class:is-hidden={!canScrollLeft}
+        disabled={!canScrollLeft}
+        aria-label="Desplazar tags hacia la izquierda"
+        title="Desplazar tags a la izquierda"
+        on:click={() => scrollTags(-220)}
+      >
+        <ChevronLeft size={14} />
+      </button>
+
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="tags-bar-scroll"
+        class:is-dragging={isDraggingTags}
+        bind:this={tagsScrollEl}
+        use:tagsWheelAction
+        on:mousedown={onTagsMouseDown}
+        on:scroll={updateScrollButtons}
+      >
+        {#each displayedTags as item (item.id)}
+          {@const isActive = isTagActive(item.id)}
+          <button
+            type="button"
+            class="tag-pill"
+            class:active={isActive}
+            class:untagged-pill={item.isUntagged}
+            on:click={() => toggleTag(item.id)}
+            title={item.isUntagged
+              ? isActive
+                ? "Quitar filtro sin tag"
+                : "Filtrar emotes sin tag"
+              : isActive
+                ? `Quitar filtro "${item.label}"`
+                : `Filtrar por tag "${item.label}"`}
+          >
+            {#if isActive}
+              <Check
+                size={11}
+                strokeWidth={2.6}
+                class="tag-pill-icon tag-pill-check"
+              />
+            {:else if item.isUntagged}
+              <TagX size={11} class="tag-pill-icon" />
+            {:else}
+              <Tag size={11} class="tag-pill-icon" />
+            {/if}
+            <span class="tag-pill-name">{item.label}</span>
+            {#if item.count > 0}
+              <span class="tag-pill-count">{item.count}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+
+      <button
+        type="button"
+        class="tag-nav-btn right"
+        class:is-hidden={!canScrollRight}
+        disabled={!canScrollRight}
+        aria-label="Desplazar tags hacia la derecha"
+        title="Desplazar tags a la derecha"
+        on:click={() => scrollTags(220)}
+      >
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  {/if}
 </header>
 
 <style>
   .main-header {
     width: 100%;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 18px 24px;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 24px 12px;
     background: rgba(26, 26, 29, 0.82);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     position: sticky;
     top: 0;
     z-index: 30;
+  }
+
+  .header-main-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .tags-bar-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+  }
+
+  .tag-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #242427;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--color-text-muted, #9ca3af);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+  }
+
+  .tag-nav-btn:hover:not(:disabled) {
+    background: #2d2d31;
+    color: var(--color-text-main, #f3f4f6);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .tag-nav-btn:focus-visible {
+    outline: 2px solid var(--color-orange-primary, #f97316);
+    outline-offset: 2px;
+  }
+
+  .tag-nav-btn.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .tags-bar-scroll {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 70px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 2px 4px;
+    margin: 0;
+    cursor: grab;
+    user-select: none;
+  }
+
+  .tags-bar-scroll.is-dragging {
+    cursor: grabbing;
+    scroll-behavior: auto;
+  }
+
+  .tags-bar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    color: var(--color-text-muted, #a1a1aa);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    transition:
+      background 0.16s ease,
+      border-color 0.16s ease,
+      color 0.16s ease,
+      box-shadow 0.16s ease,
+      transform 0.1s ease;
+    flex-shrink: 0;
+  }
+
+  .tag-pill:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: var(--color-text-main, #f4f4f5);
+  }
+
+  .tag-pill.active {
+    background: var(--color-orange-primary, #f97316);
+    border-color: var(--color-orange-primary, #f97316);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 2px 10px rgba(249, 115, 22, 0.38);
+  }
+
+  .tag-pill.active:hover {
+    background: var(--color-orange-hover, #ea580c);
+    border-color: var(--color-orange-hover, #ea580c);
+    color: #ffffff;
+  }
+
+  .tag-pill:focus-visible {
+    outline: 2px solid var(--color-orange-primary, #f97316);
+    outline-offset: 2px;
+  }
+
+  :global(.tag-pill-icon) {
+    opacity: 0.8;
+    flex-shrink: 0;
+  }
+
+  .tag-pill.active :global(.tag-pill-icon) {
+    opacity: 1;
+    color: #ffffff;
+  }
+
+  .tag-pill-name {
+    line-height: 1.2;
+  }
+
+  .tag-pill-count {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    opacity: 0.85;
+    transition:
+      background 0.16s ease,
+      color 0.16s ease;
+  }
+
+  .tag-pill.active .tag-pill-count {
+    background: rgba(0, 0, 0, 0.24);
+    color: #ffffff;
+    opacity: 1;
   }
 
   .header-left-spacer {
@@ -748,7 +1178,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    border-bottom: 1px solid
+      var(--color-border-subtle, rgba(255, 255, 255, 0.08));
     background: rgba(255, 255, 255, 0.02);
   }
 
@@ -815,7 +1246,8 @@
     align-items: flex-start;
     gap: 12px;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--color-border-light, rgba(255, 255, 255, 0.06));
+    border-bottom: 1px solid
+      var(--color-border-light, rgba(255, 255, 255, 0.06));
     cursor: pointer;
     transition: background-color 0.15s ease;
     text-align: left;
@@ -835,7 +1267,7 @@
   }
 
   .notif-item.unread::before {
-    content: '';
+    content: "";
     position: absolute;
     left: 4px;
     top: 50%;
@@ -923,7 +1355,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.15s ease, color 0.15s ease;
+    transition:
+      opacity 0.15s ease,
+      color 0.15s ease;
   }
 
   .notif-item:hover .notif-item-delete {
