@@ -8,7 +8,10 @@ import {
   askBeforePaste,
   setAskBeforePaste,
   lastCopiedEmote,
-  recordCopiedEmote
+  recordCopiedEmote,
+  formatFilter,
+  setFormatFilter,
+  filterEmotesByFormat
 } from './preferences';
 import type { Emote } from '$lib/types/emote';
 
@@ -31,6 +34,7 @@ describe('preferences store and sorting helpers', () => {
   beforeEach(() => {
     setGridSize('medium');
     setSortOption('date-desc');
+    setFormatFilter('all');
   });
 
   it('updates and holds grid size', () => {
@@ -114,6 +118,38 @@ describe('preferences store and sorting helpers', () => {
     expect(recorded?.path).toBe('/emotes/pepe.webp');
     expect(typeof recorded?.timestamp).toBe('number');
     unsub();
+  });
+
+  it('manages formatFilter preference and updates', () => {
+    let current: string | undefined;
+    const unsub = formatFilter.subscribe((v) => (current = v));
+    expect(current).toBe('all');
+
+    setFormatFilter('gif');
+    expect(current).toBe('gif');
+
+    setFormatFilter('static');
+    expect(current).toBe('static');
+
+    setFormatFilter('all');
+    expect(current).toBe('all');
+    unsub();
+  });
+
+  it('filters emotes correctly by format (all, gif, static)', () => {
+    const e1 = createDummyEmote({ id: 1, name: 'Static1', format: 'webp', path: '/emotes/s1.webp' });
+    const e2 = createDummyEmote({ id: 2, name: 'Gif1', format: 'gif', path: '/emotes/g1.gif' });
+    const e3 = createDummyEmote({ id: 3, name: 'Static2', format: 'png', path: '/emotes/s2.png' });
+    const e4 = createDummyEmote({ id: 4, name: 'Gif2', format: 'webp', path: '/emotes/g2.gif' });
+
+    const all = filterEmotesByFormat([e1, e2, e3, e4], 'all');
+    expect(all.map((e) => e.id)).toEqual([1, 2, 3, 4]);
+
+    const gifs = filterEmotesByFormat([e1, e2, e3, e4], 'gif');
+    expect(gifs.map((e) => e.id)).toEqual([2, 4]);
+
+    const statics = filterEmotesByFormat([e1, e2, e3, e4], 'static');
+    expect(statics.map((e) => e.id)).toEqual([1, 3]);
   });
 });
 

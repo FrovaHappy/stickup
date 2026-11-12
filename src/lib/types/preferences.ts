@@ -12,3 +12,12 @@ export interface SortOptionItem {
   label: string;
 }
 
+export type EmoteFormatFilter = 'all' | 'static' | 'gif';
+
+export interface FormatFilterItem {
+  id: EmoteFormatFilter;
+  label: string;
+  desc?: string;
+}
+
+

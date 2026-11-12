@@ -11,7 +11,13 @@
   import { customSizes, defaultResolution, resolveDefaultDimensions } from '$lib/stores/sizes';
   import { minimizeOnCopyEnabled } from '$lib/stores/systemSettings';
   import { toast } from '$lib/stores/toast';
-  import { sortOption, sortEmotesList, recordCopiedEmote } from '$lib/stores/preferences';
+  import {
+    sortOption,
+    sortEmotesList,
+    recordCopiedEmote,
+    formatFilter,
+    filterEmotesByFormat
+  } from '$lib/stores/preferences';
   import { toPascalCase, isAnimatedEmote } from '$lib/utils/format';
 
   let selected: Emote | null = null;
@@ -128,7 +134,7 @@
     const rawQ = searchQuery.trim();
     const q = rawQ.toLowerCase();
     const pascalQ = toPascalCase(rawQ).toLowerCase();
-    let result = $emotes;
+    let result = filterEmotesByFormat($emotes, $formatFilter);
 
     if (q) {
       result = result.filter((e) => {

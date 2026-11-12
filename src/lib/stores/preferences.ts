@@ -1,11 +1,19 @@
 import { writable } from 'svelte/store';
 import type { Emote } from '$lib/types/emote';
-import type { GridSize, SortOption, SortOptionItem } from '$lib/types/preferences';
+import type {
+  GridSize,
+  SortOption,
+  SortOptionItem,
+  EmoteFormatFilter,
+  FormatFilterItem
+} from '$lib/types/preferences';
 import { toast } from '$lib/stores/toast';
+import { isAnimatedEmote } from '$lib/utils/format';
 
 const GRID_SIZE_KEY = 'stickup_pref_grid_size';
 const SORT_OPTION_KEY = 'stickup_pref_sort_option';
 const ASK_BEFORE_PASTE_KEY = 'stickup_pref_ask_before_paste';
+const FORMAT_FILTER_KEY = 'stickup_pref_format_filter';
 
 export const SORT_OPTIONS: SortOptionItem[] = [
   { id: 'date-desc', label: 'Más recientes' },
@@ -13,6 +21,12 @@ export const SORT_OPTIONS: SortOptionItem[] = [
   { id: 'name-asc', label: 'Nombre (A - Z)' },
   { id: 'name-desc', label: 'Nombre (Z - A)' },
   { id: 'copies-desc', label: 'Más usados / Hot' }
+];
+
+export const FORMAT_FILTER_OPTIONS: FormatFilterItem[] = [
+  { id: 'all', label: 'Todos', desc: 'Mostrar GIFs y estáticos' },
+  { id: 'static', label: 'Estáticos', desc: 'Solo imágenes (PNG, WEBP, JPG)' },
+  { id: 'gif', label: 'GIFs / Animados', desc: 'Solo emotes animados' }
 ];
 
 function getStoredGridSize(): GridSize {
@@ -60,6 +74,19 @@ function getStoredAskBeforePaste(): boolean {
   return true;
 }
 
+function getStoredFormatFilter(): EmoteFormatFilter {
+  if (typeof localStorage === 'undefined') return 'all';
+  try {
+    const val = localStorage.getItem(FORMAT_FILTER_KEY);
+    if (val === 'all' || val === 'static' || val === 'gif') {
+      return val;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return 'all';
+}
+
 export interface CopiedEmoteRecord {
   id: number;
   name: string;
@@ -69,6 +96,7 @@ export interface CopiedEmoteRecord {
 
 export const gridSize = writable<GridSize>(getStoredGridSize());
 export const sortOption = writable<SortOption>(getStoredSortOption());
+export const formatFilter = writable<EmoteFormatFilter>(getStoredFormatFilter());
 export const askBeforePaste = writable<boolean>(getStoredAskBeforePaste());
 export const lastCopiedEmote = writable<CopiedEmoteRecord | null>(null);
 
@@ -117,6 +145,27 @@ export function setSortOption(option: SortOption) {
       // Ignore
     }
   }
+}
+
+export function setFormatFilter(filter: EmoteFormatFilter) {
+  formatFilter.set(filter);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(FORMAT_FILTER_KEY, filter);
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+export function filterEmotesByFormat(emotes: Emote[], filter: EmoteFormatFilter): Emote[] {
+  if (filter === 'gif') {
+    return emotes.filter((e) => isAnimatedEmote(e));
+  }
+  if (filter === 'static') {
+    return emotes.filter((e) => !isAnimatedEmote(e));
+  }
+  return emotes;
 }
 
 export function sortEmotesList(emotes: Emote[], option: SortOption): Emote[] {

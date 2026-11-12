@@ -16,15 +16,20 @@
     Info,
     CircleCheck,
     TriangleAlert,
-    CircleAlert
+    CircleAlert,
+    Images,
+    Image,
+    Film
   } from "@lucide/svelte";
   import {
     gridSize,
     setGridSize,
     sortOption,
     setSortOption,
+    formatFilter,
+    setFormatFilter,
   } from "$lib/stores/preferences";
-  import type { GridSize, SortOption } from "$lib/types/preferences";
+  import type { GridSize, SortOption, EmoteFormatFilter } from "$lib/types/preferences";
   import { formatSearchQueryInput } from "$lib/utils/format";
   import {
     notifications,
@@ -50,9 +55,35 @@
     searchQuery = searchQuery.trim();
   }
 
+  let filterMenuOpen = false;
   let sortMenuOpen = false;
   let gridMenuOpen = false;
   let notificationsMenuOpen = false;
+
+  const FILTER_ITEMS = [
+    {
+      id: "all" as EmoteFormatFilter,
+      label: "Todos",
+      icon: Images,
+      desc: "Mostrar GIFs y estáticos",
+    },
+    {
+      id: "static" as EmoteFormatFilter,
+      label: "Estáticos",
+      icon: Image,
+      desc: "Solo imágenes estáticas",
+    },
+    {
+      id: "gif" as EmoteFormatFilter,
+      label: "GIFs / Animados",
+      icon: Film,
+      desc: "Solo emotes animados",
+    },
+  ];
+
+  $: currentFilterItem =
+    FILTER_ITEMS.find((f) => f.id === $formatFilter) ?? FILTER_ITEMS[0];
+  $: CurrentFilterIcon = currentFilterItem.icon;
 
   const SORT_ITEMS = [
     {
@@ -97,9 +128,18 @@
     { id: "large", label: "Grande", desc: "Vista detallada" },
   ];
 
+  function toggleFilterMenu(e: MouseEvent) {
+    e.stopPropagation();
+    filterMenuOpen = !filterMenuOpen;
+    sortMenuOpen = false;
+    gridMenuOpen = false;
+    notificationsMenuOpen = false;
+  }
+
   function toggleSortMenu(e: MouseEvent) {
     e.stopPropagation();
     sortMenuOpen = !sortMenuOpen;
+    filterMenuOpen = false;
     gridMenuOpen = false;
     notificationsMenuOpen = false;
   }
@@ -107,6 +147,7 @@
   function toggleGridMenu(e: MouseEvent) {
     e.stopPropagation();
     gridMenuOpen = !gridMenuOpen;
+    filterMenuOpen = false;
     sortMenuOpen = false;
     notificationsMenuOpen = false;
   }
@@ -114,8 +155,14 @@
   function toggleNotificationsMenu(e: MouseEvent) {
     e.stopPropagation();
     notificationsMenuOpen = !notificationsMenuOpen;
+    filterMenuOpen = false;
     sortMenuOpen = false;
     gridMenuOpen = false;
+  }
+
+  function selectFilter(opt: EmoteFormatFilter) {
+    setFormatFilter(opt);
+    filterMenuOpen = false;
   }
 
   function selectSort(opt: SortOption) {
@@ -129,6 +176,7 @@
   }
 
   function closeAllMenus() {
+    filterMenuOpen = false;
     sortMenuOpen = false;
     gridMenuOpen = false;
     notificationsMenuOpen = false;
@@ -166,8 +214,62 @@
     </div>
   </div>
 
-  <!-- Botones de acción a la derecha: Ordenar y Tamaño de Grid -->
+  <!-- Botones de acción a la derecha: Filtro, Ordenar y Tamaño de Grid -->
   <div class="header-actions">
+    <!-- Menú de Filtro de Formato (Todos / Estáticos / GIFs) -->
+    <div class="action-dropdown-container">
+      <button
+        type="button"
+        class="action-btn"
+        class:active={filterMenuOpen || $formatFilter !== "all"}
+        title={`Filtro: ${currentFilterItem.label}`}
+        aria-label={`Filtro: ${currentFilterItem.label}`}
+        on:click={toggleFilterMenu}
+      >
+        <CurrentFilterIcon size={20} strokeWidth={2} />
+        {#if $formatFilter !== "all"}
+          <span class="active-filter-dot" aria-hidden="true"></span>
+        {/if}
+      </button>
+
+      {#if filterMenuOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+        <div
+          class="dropdown-popover filter-popover"
+          on:click|stopPropagation
+          role="menu"
+          tabindex="-1"
+        >
+          <div class="popover-header">Filtrar por formato</div>
+          {#each FILTER_ITEMS as opt}
+            {@const OptionIcon = opt.icon}
+            <button
+              type="button"
+              class="popover-item"
+              class:selected={$formatFilter === opt.id}
+              role="menuitem"
+              on:click={() => selectFilter(opt.id)}
+            >
+              <div class="popover-item-left">
+                <OptionIcon
+                  size={18}
+                  strokeWidth={2}
+                  class={`sort-option-icon ${$formatFilter === opt.id ? "is-active" : ""}`}
+                />
+                <div class="item-text">
+                  <span class="item-title">{opt.label}</span>
+                  <span class="item-desc">{opt.desc}</span>
+                </div>
+              </div>
+              {#if $formatFilter === opt.id}
+                <Check size={16} class="check-icon" />
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
     <!-- Menú de Ordenamiento -->
     <div class="action-dropdown-container">
       <button
@@ -475,6 +577,7 @@
   }
 
   .action-btn {
+    position: relative;
     width: 38px;
     height: 38px;
     border-radius: 8px;
@@ -499,6 +602,18 @@
     border-color: rgba(var(--color-orange-rgb, 249, 115, 22), 0.28);
   }
 
+  .active-filter-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--color-orange-primary, #f97316);
+    box-shadow: 0 0 6px rgba(var(--color-orange-rgb, 249, 115, 22), 0.7);
+    pointer-events: none;
+  }
+
   .dropdown-popover {
     position: absolute;
     top: calc(100% + 8px);
@@ -515,7 +630,8 @@
     gap: 2px;
   }
 
-  .dropdown-popover.sort-popover {
+  .dropdown-popover.sort-popover,
+  .dropdown-popover.filter-popover {
     min-width: 240px;
   }
 
