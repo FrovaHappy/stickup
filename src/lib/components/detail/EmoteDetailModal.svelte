@@ -14,6 +14,7 @@
     AlertCircle,
     RotateCcw,
     Wand2,
+    Maximize2,
   } from "@lucide/svelte";
   import type { Emote, GifLoopStatus } from "$lib/types/emote";
   import { api } from "$lib/services/api";
@@ -54,6 +55,7 @@
   import TagManager from "./TagManager.svelte";
   import DeleteEmoteModal from "../DeleteEmoteModal.svelte";
   import RemoveBgModal from "./RemoveBgModal.svelte";
+  import EmoteImageLightbox from "./EmoteImageLightbox.svelte";
 
   export let emote: Emote | null = null;
   export let onClose: () => void;
@@ -78,6 +80,7 @@
   let nameError = "";
   let showDeleteConfirm = false;
   let showRemoveBgModal = false;
+  let showExpandedImage = false;
 
   let gifLoopStatus: GifLoopStatus | null = null;
   let isUpdatingLoop = false;
@@ -382,14 +385,43 @@
 <svelte:window on:keydown={handleKeyDown} />
 
 {#if emote}
-  <Modal open={true} title="INFORMACIÓN DEL EMOTE" maxWidth="600px" {onClose}>
+  <Modal
+    open={true}
+    title="INFORMACIÓN DEL EMOTE"
+    maxWidth="600px"
+    {onClose}
+    closeOnEscape={!showExpandedImage && !showDeleteConfirm && !showRemoveBgModal}
+  >
     <div class="top-row">
-      <div class="preview-box">
+      <div
+        class="preview-box"
+        role="button"
+        tabindex="0"
+        title="Clic para expandir imagen"
+        aria-label="Expandir imagen del emote"
+        on:click={() => (showExpandedImage = true)}
+        on:keydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            showExpandedImage = true;
+          }
+        }}
+      >
         <img
           src={`${convertFileSrc(emote.path)}${previewCacheBuster ? `?t=${previewCacheBuster}` : ""}`}
           alt={emote.name}
           class="preview-img"
         />
+        <button
+          type="button"
+          class="preview-expand-btn"
+          title="Expandir imagen"
+          aria-label="Expandir imagen"
+          on:click|stopPropagation={() => (showExpandedImage = true)}
+        >
+          <Maximize2 size={12} />
+          <span>Expandir</span>
+        </button>
       </div>
 
       <div class="fields-col">
@@ -725,6 +757,15 @@
   />
 {/if}
 
+{#if showExpandedImage && emote}
+  <EmoteImageLightbox
+    {emote}
+    open={true}
+    {previewCacheBuster}
+    onClose={() => (showExpandedImage = false)}
+  />
+{/if}
+
 <style>
   .top-row {
     display: flex;
@@ -732,6 +773,7 @@
     align-items: stretch;
   }
   .preview-box {
+    position: relative;
     width: 140px;
     height: 140px;
     background: var(--color-bg-input, rgba(0, 0, 0, 0.25));
@@ -742,6 +784,44 @@
     justify-content: center;
     padding: 12px;
     flex-shrink: 0;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .preview-box:hover {
+    border-color: var(--color-orange-primary, #f97316);
+    background: rgba(249, 115, 22, 0.04);
+  }
+  .preview-box:focus-visible {
+    outline: 2px solid var(--color-orange-primary, #f97316);
+    outline-offset: 2px;
+  }
+  .preview-expand-btn {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: rgba(20, 20, 22, 0.85);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+    color: var(--color-text-muted, #a1a1aa);
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    opacity: 0.85;
+  }
+  .preview-box:hover .preview-expand-btn,
+  .preview-expand-btn:focus-visible {
+    opacity: 1;
+    background: var(--color-orange-primary, #f97316);
+    color: #ffffff;
+    border-color: var(--color-orange-primary, #f97316);
   }
   .preview-img {
     max-width: 100%;

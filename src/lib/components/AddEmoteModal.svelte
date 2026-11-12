@@ -2,31 +2,35 @@
   import { onDestroy, onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { Plus, Image, FolderOpen, Link } from "@lucide/svelte";
+  import {
+    Plus,
+    Image,
+    FolderOpen,
+    Link,
+    Loader2,
+    CheckCircle2,
+    AlertCircle,
+  } from "@lucide/svelte";
   import { api } from "$lib/services/api";
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
   import { askBeforePaste, lastCopiedEmote } from "$lib/stores/preferences";
-  import { toPascalCase, sanitizeEmoteName } from "$lib/utils/format";
+  import { toPascalCase, parseUrlOrPath } from "$lib/utils/format";
   import type { Emote } from "$lib/types/emote";
   import PasteConfirmPopup from "./PasteConfirmPopup.svelte";
   import {
     Button,
-    Chip,
     Dropzone,
     Input,
     Modal,
-    Toast,
   } from "$lib/components/system-ui";
 
   export let isOpen = false;
   export let customTrigger = false;
   let isDragging = false;
   let isBusy = false;
-  let showUrlInput = false;
 
   let urlValue = "";
-  let customName = "";
   let statusMsg = "";
   let isError = false;
   let lastPasteTimestamp = 0;
@@ -204,9 +208,7 @@
         return;
       }
 
-      const normalizedName = customName.trim()
-        ? sanitizeEmoteName(customName)
-        : inspect.suggested_name || "Clipboard";
+      const normalizedName = inspect.suggested_name || "Clipboard";
 
       // Si askBeforePaste está desactivado: guardar directamente
       if (!$askBeforePaste) {
@@ -241,7 +243,6 @@
 
     try {
       const result = await api.importFromClipboard(nameToUse);
-      customName = "";
       await loadEmotes();
 
       const list: Emote[] = Array.isArray(result)
@@ -277,32 +278,120 @@
   }
 
   async function handleAddFromUrl() {
-    if (isBusy || !urlValue.trim()) return;
+    const rawInput = urlValue.trim();
+    if (isBusy || !rawInput) return;
     isBusy = true;
-    statusMsg = "Descargando imagen desde URL...";
     isError = false;
 
+    const parsed = parseUrlOrPath(rawInput);
+
+    if (parsed.type === "local") {
+      statusMsg = "Importando desde ruta local...";
+      try {
+        const imported = await api.importPaths([parsed.value]);
+        await loadEmotes();
+        urlValue = "";
+        if (imported.length === 1) {
+          const item = imported[0];
+          const fmt = item.format ? ` (${item.format.toUpperCase()})` : "";
+          showFeedback(`✓ ¡Emote "${item.name}"${fmt} agregado exitosamente!`);
+        } else if (imported.length > 1) {
+          showFeedback(
+            `✓ ¡${imported.length} emotes agregados exitosamente desde el directorio!`,
+          );
+        } else {
+          showFeedback(
+            "No se encontraron imágenes compatibles (.png, .jpg, .jpeg, .gif, .webp) en la ruta.",
+            true,
+          );
+        }
+      } catch (err: any) {
+        showFeedback(`Error: ${err?.message || err}`, true);
+      } finally {
+        setTimeout(() => {
+          isBusy = false;
+        }, 400);
+      }
+      return;
+    }
+
+    // URL web
+    const targetUrl = parsed.value;
+    const isDirectImage =
+      /\.(png|jpe?g|gif|webp|svg|avif|bmp)($|\?|#)/i.test(targetUrl) ||
+      targetUrl.includes("cdn.discordapp.com/emojis/");
+
+    if (isDirectImage) {
+      statusMsg = "Descargando imagen desde URL...";
+      try {
+        const created = await api.importFromUrl(targetUrl);
+        urlValue = "";
+        await loadEmotes();
+        const fmt = created?.format ? ` (${created.format.toUpperCase()})` : "";
+        const name = created?.name || "emote";
+        showFeedback(`✓ ¡Emote "${name}"${fmt} agregado desde URL!`);
+      } catch {
+        await tryScanWebUrl(targetUrl);
+      } finally {
+        setTimeout(() => {
+          isBusy = false;
+        }, 400);
+      }
+      return;
+    }
+
+    // No es extensión de imagen directa: es directorio web o página
+    await tryScanWebUrl(targetUrl);
+    setTimeout(() => {
+      isBusy = false;
+    }, 400);
+  }
+
+  async function tryScanWebUrl(url: string) {
+    statusMsg = "Escaneando URL / directorio web...";
     try {
-      const normalizedName = customName.trim() ? sanitizeEmoteName(customName) : undefined;
-      const created = await api.importFromUrl(urlValue.trim(), normalizedName);
+      const scanned = await api.scanUrl(url);
+      if (scanned && scanned.length > 0) {
+        statusMsg = `Importando ${scanned.length} ${scanned.length === 1 ? "imagen encontrada" : "imágenes encontradas"}...`;
+        const importRequests = scanned.map((s) => ({
+          url: s.url,
+          name: s.suggested_name,
+        }));
+        const result = await api.importScannedImages(importRequests);
+        await loadEmotes();
+        urlValue = "";
+        if (result.imported.length === 1) {
+          const item = result.imported[0];
+          const fmt = item.format ? ` (${item.format.toUpperCase()})` : "";
+          showFeedback(`✓ ¡Emote "${item.name}"${fmt} agregado desde URL!`);
+        } else if (result.imported.length > 1) {
+          showFeedback(
+            `✓ ¡${result.imported.length} emotes importados exitosamente desde la URL!`,
+          );
+        } else {
+          showFeedback(
+            `No se pudieron importar las imágenes encontradas (${result.failed_count} fallaron).`,
+            true,
+          );
+        }
+        return;
+      }
+    } catch {
+      // Si el escaneo falló, intentar importación directa como último recurso
+    }
+
+    try {
+      const created = await api.importFromUrl(url);
       urlValue = "";
-      customName = "";
-      showUrlInput = false;
       await loadEmotes();
       const fmt = created?.format ? ` (${created.format.toUpperCase()})` : "";
       const name = created?.name || "emote";
-      showFeedback(
-        `✓ ¡Emote "${name}"${fmt} agregado desde URL!`,
-      );
+      showFeedback(`✓ ¡Emote "${name}"${fmt} agregado desde URL!`);
     } catch (err: any) {
       if (typeof err === "string" && err.includes("ya está en curso")) {
         return;
       }
       showFeedback(`Error: ${err?.message || err}`, true);
-    } finally {
-      setTimeout(() => {
-        isBusy = false;
-      }, 400);
     }
   }
 
@@ -343,7 +432,12 @@
     }
 
     const uri = dt.getData("text/uri-list") || dt.getData("text/plain");
-    if (uri && (uri.startsWith("http://") || uri.startsWith("https://"))) {
+    if (
+      uri &&
+      (uri.startsWith("http://") ||
+        uri.startsWith("https://") ||
+        uri.startsWith("file://"))
+    ) {
       urlValue = uri.trim();
       await handleAddFromUrl();
     }
@@ -485,68 +579,80 @@
   <slot name="trigger" open={() => (isOpen = true)} />
 {/if}
 
-<Modal bind:open={isOpen} maxWidth="460px" busy={isBusy}>
+<Modal bind:open={isOpen} maxWidth="480px" busy={isBusy}>
   <Dropzone
     bind:isDragging
     disabled={isBusy}
-    subtitle="Soporta archivos (.png, .jpg, .webp, .gif), carpetas, URL o portapapeles con Ctrl+V"
+    subtitle="Arrastra imágenes aquí o añade por URL / archivo / carpeta"
     ariaLabel="Zona para arrastrar y soltar emotes"
     on:drop={handleHtmlDrop}
   >
+    <form class="url-import-form" on:submit|preventDefault={handleAddFromUrl}>
+      <div class="url-input-row">
+        <Input
+          type="text"
+          placeholder="URL o ruta (archivo o directorio)..."
+          bind:value={urlValue}
+          disabled={isBusy}
+          ariaLabel="URL o ruta para importar emote"
+        >
+          <Link slot="leading" size={15} class="url-icon" />
+        </Input>
+        <Button
+          type="submit"
+          variant="primary"
+          size="md"
+          loading={isBusy}
+          disabled={isBusy || !urlValue.trim()}
+          title="Añadir inmediatamente desde URL o ruta"
+        >
+          <Plus size={15} />
+          <span>Añadir</span>
+        </Button>
+      </div>
+    </form>
+
+    <div class="divider">
+      <span class="divider-line"></span>
+      <span class="divider-text">o buscar en tu PC</span>
+      <span class="divider-line"></span>
+    </div>
+
     <div class="primary-actions">
-      <Button variant="primary" disabled={isBusy} on:click={pickFiles}>
+      <Button variant="secondary" size="md" disabled={isBusy} on:click={pickFiles}>
         <Image size={15} /> Elegir Archivo(s)
       </Button>
 
-      <Button variant="secondary" disabled={isBusy} on:click={pickFolder}>
+      <Button variant="secondary" size="md" disabled={isBusy} on:click={pickFolder}>
         <FolderOpen size={15} /> Elegir Carpeta
       </Button>
     </div>
 
-    <div class="secondary-actions">
-      <Chip
-        pill
-        active={showUrlInput}
-        disabled={isBusy}
-        on:click={() => (showUrlInput = !showUrlInput)}
+    {#if isBusy || statusMsg}
+      <div
+        class="status-bar"
+        class:is-busy={isBusy}
+        class:is-error={isError}
+        class:is-success={!isBusy && !isError && !!statusMsg}
+        role="status"
+        aria-live="polite"
       >
-        <Link size={13} /> Desde URL
-      </Chip>
-    </div>
-
-    {#if showUrlInput}
-      <form class="url-form" on:submit|preventDefault={handleAddFromUrl}>
-        <Input
-          type="url"
-          placeholder="https://ejemplo.com/emote.gif o .webp / .png"
-          bind:value={urlValue}
-          disabled={isBusy}
-          required
-        />
-        <div class="url-bottom-row">
-          <div class="name-col">
-            <Input
-              type="text"
-              placeholder="Nombre opcional"
-              bind:value={customName}
-              disabled={isBusy}
-            />
-          </div>
-          <Button
-            type="submit"
-            variant="primary"
-            size="sm"
-            loading={isBusy}
-            disabled={isBusy || !urlValue.trim()}
-          >
-            <Plus size={14} /> Importar URL
-          </Button>
+        <div class="status-content">
+          {#if isBusy}
+            <Loader2 size={14} class="spin status-icon" />
+          {:else if isError}
+            <AlertCircle size={14} class="status-icon" />
+          {:else}
+            <CheckCircle2 size={14} class="status-icon" />
+          {/if}
+          <span class="status-text">{statusMsg || "Procesando..."}</span>
         </div>
-      </form>
-    {/if}
-
-    {#if statusMsg}
-      <Toast variant={isError ? "error" : "success"} message={statusMsg} />
+        {#if isBusy}
+          <div class="progress-track">
+            <div class="progress-bar-indeterminate"></div>
+          </div>
+        {/if}
+      </div>
     {/if}
   </Dropzone>
 </Modal>
@@ -561,6 +667,44 @@
 />
 
 <style>
+  .url-import-form {
+    width: 100%;
+    margin-top: 2px;
+  }
+  .url-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  .url-input-row :global(.ui-input-group) {
+    flex: 1;
+    min-width: 0;
+  }
+  :global(.url-icon) {
+    color: var(--color-orange-primary, #f97316);
+    flex-shrink: 0;
+  }
+  .divider {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 12px;
+    margin: 8px 0 4px;
+  }
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  }
+  .divider-text {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-dim, #71717a);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
   .primary-actions {
     display: flex;
     flex-wrap: wrap;
@@ -568,29 +712,99 @@
     gap: 10px;
     width: 100%;
   }
-  .secondary-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 2px;
-  }
-  .url-form {
+  .status-bar {
+    position: relative;
     width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 6px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    margin-top: 8px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+    overflow: hidden;
+    animation: fadeIn 0.15s ease-out;
+    box-sizing: border-box;
   }
-  .url-bottom-row {
+  .status-bar.is-busy {
+    border-color: rgba(249, 115, 22, 0.3);
+    background: rgba(249, 115, 22, 0.06);
+  }
+  .status-bar.is-success {
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.08);
+  }
+  .status-bar.is-error {
+    border-color: rgba(234, 88, 12, 0.35);
+    background: rgba(234, 88, 12, 0.1);
+  }
+  .status-content {
     display: flex;
     align-items: center;
     gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
   }
-  .name-col {
+  .status-bar.is-busy .status-content {
+    color: var(--color-orange-primary, #f97316);
+  }
+  .status-bar.is-success .status-content {
+    color: #4ade80;
+  }
+  .status-bar.is-error .status-content {
+    color: #fb923c;
+  }
+  .status-text {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  :global(.status-icon) {
+    flex-shrink: 0;
+  }
+  :global(.spin) {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .progress-track {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+  }
+  .progress-bar-indeterminate {
+    width: 40%;
+    height: 100%;
+    background: var(--color-orange-primary, #f97316);
+    animation: indeterminate 1.2s infinite ease-in-out;
+  }
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 </style>

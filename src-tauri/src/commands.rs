@@ -857,6 +857,74 @@ fn import_single_file(
     }))
 }
 
+pub(crate) fn percent_decode_path(input: &str) -> String {
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let h1 = chars.next();
+            let h2 = chars.next();
+            if let (Some(c1), Some(c2)) = (h1, h2) {
+                let s = [c1, c2];
+                if let Ok(hex_str) = std::str::from_utf8(&s) {
+                    if let Ok(byte) = u8::from_str_radix(hex_str, 16) {
+                        bytes.push(byte);
+                        continue;
+                    }
+                }
+                bytes.push(b'%');
+                bytes.push(c1);
+                bytes.push(c2);
+            } else {
+                bytes.push(b'%');
+                if let Some(c) = h1 {
+                    bytes.push(c);
+                }
+            }
+        } else {
+            bytes.push(b);
+        }
+    }
+    String::from_utf8(bytes).unwrap_or_else(|_| input.to_string())
+}
+
+pub(crate) fn normalize_import_path(raw: &str) -> PathBuf {
+    let unquoted = raw.trim().trim_matches(|c| c == '\'' || c == '"');
+    let mut clean = unquoted;
+    if let Some(stripped) = clean.strip_prefix("file://") {
+        clean = stripped;
+        if let Some(without_host) = clean.strip_prefix("localhost") {
+            clean = without_host;
+        }
+        #[cfg(windows)]
+        {
+            if clean.starts_with('/') && clean.chars().nth(2) == Some(':') {
+                clean = &clean[1..];
+            }
+        }
+    }
+
+    let decoded_storage;
+    let path_str = if clean.contains('%') {
+        decoded_storage = percent_decode_path(clean);
+        &decoded_storage
+    } else {
+        clean
+    };
+
+    if path_str == "~" {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            return PathBuf::from(home);
+        }
+    } else if let Some(sub) = path_str.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            return PathBuf::from(home).join(sub);
+        }
+    }
+
+    PathBuf::from(path_str)
+}
+
 #[tauri::command]
 pub fn import_paths(paths: Vec<String>) -> Result<Vec<Emote>, String> {
     let conn = ensure_db()?;
@@ -869,19 +937,19 @@ pub fn import_paths(paths: Vec<String>) -> Result<Vec<Emote>, String> {
     let mut created = Vec::new();
 
     for raw in paths {
-        let p = Path::new(&raw);
+        let p = normalize_import_path(&raw);
         if !p.exists() {
             continue;
         }
         if p.is_dir() {
-            let entries = fs::read_dir(p).map_err(|e| e.to_string())?;
+            let entries = fs::read_dir(&p).map_err(|e| e.to_string())?;
             for entry in entries.flatten() {
                 if let Some(emote) = import_single_file(&conn, &abs_dir, &entry.path())? {
                     created.push(emote);
                 }
             }
         } else if p.is_file() {
-            if let Some(emote) = import_single_file(&conn, &abs_dir, p)? {
+            if let Some(emote) = import_single_file(&conn, &abs_dir, &p)? {
                 created.push(emote);
             }
         }
@@ -2864,5 +2932,25 @@ mod tests {
         assert_eq!(status_finite.loop_count, Some(1));
 
         let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_normalize_import_path_linux_and_file_urls() {
+        assert_eq!(
+            normalize_import_path("/home/user/emotes"),
+            std::path::PathBuf::from("/home/user/emotes")
+        );
+        assert_eq!(
+            normalize_import_path("file:///home/user/emotes/"),
+            std::path::PathBuf::from("/home/user/emotes/")
+        );
+        assert_eq!(
+            normalize_import_path("file:///home/user/my%20emotes"),
+            std::path::PathBuf::from("/home/user/my emotes")
+        );
+        assert_eq!(
+            percent_decode_path("pepe%20frog%21"),
+            "pepe frog!".to_string()
+        );
     }
 }

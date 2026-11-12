@@ -160,4 +160,63 @@ export function sanitizeEmoteName(str?: string | null): string {
     .trim();
 }
 
+export interface ParsedUrlOrPath {
+  type: 'local' | 'web';
+  value: string;
+}
+
+/**
+ * Normaliza y clasifica una entrada de texto como ruta local (archivo o directorio)
+ * o URL web (archivo, directorio o página). Soporta file://, paths Windows y Unix.
+ */
+export function parseUrlOrPath(raw: string): ParsedUrlOrPath {
+  let trimmed = (raw || '').trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+
+  // Comprobar esquema file://
+  if (trimmed.toLowerCase().startsWith('file://')) {
+    let clean = trimmed.replace(/^file:\/\/(localhost)?/i, '');
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {
+      // conservar sin decodificar si falla
+    }
+    // En Windows, si queda con letra de unidad como /C:/ o C:/
+    if (/^\/?[a-zA-Z]:/.test(clean)) {
+      if (clean.startsWith('/')) {
+        clean = clean.slice(1);
+      }
+      clean = clean.replace(/\//g, '\\');
+    } else if (!clean.startsWith('/') && !clean.startsWith('\\')) {
+      clean = '/' + clean;
+    }
+    return { type: 'local', value: clean };
+  }
+
+  // Rutas locales de Windows (C:\..., C:/..., \\server\share), Unix (/home/...), o relativas (~, ./, ../)
+  if (
+    /^[a-zA-Z]:[/\\]/.test(trimmed) ||
+    trimmed.startsWith('\\\\') ||
+    (trimmed.startsWith('/') && !trimmed.startsWith('//')) ||
+    trimmed.startsWith('~/') ||
+    trimmed === '~' ||
+    trimmed.startsWith('./') ||
+    trimmed.startsWith('../')
+  ) {
+    return { type: 'local', value: trimmed };
+  }
+
+  // URL web (http, https o dominio directo)
+  let webUrl = trimmed;
+  if (!webUrl.startsWith('http://') && !webUrl.startsWith('https://')) {
+    webUrl = 'https://' + webUrl;
+  }
+  return { type: 'web', value: webUrl };
+}
+
 

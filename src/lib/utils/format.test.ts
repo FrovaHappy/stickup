@@ -7,7 +7,8 @@ import {
   resolveDimensions,
   toPascalCase,
   formatSearchQueryInput,
-  sanitizeEmoteName
+  sanitizeEmoteName,
+  parseUrlOrPath
 } from './format';
 import type { Emote } from '$lib/types/emote';
 
@@ -159,6 +160,80 @@ describe('format utilities', () => {
       expect(sanitizeEmoteName('   ')).toBe('');
       expect(sanitizeEmoteName(null)).toBe('');
       expect(sanitizeEmoteName(undefined)).toBe('');
+    });
+  });
+
+  describe('parseUrlOrPath', () => {
+    it('parses file:// URLs for files and directories', () => {
+      expect(parseUrlOrPath('file:///C:/Users/happy/Pictures/emote.png')).toEqual({
+        type: 'local',
+        value: 'C:\\Users\\happy\\Pictures\\emote.png'
+      });
+      expect(parseUrlOrPath('file:///C:/Users/happy/Pictures/emotes/')).toEqual({
+        type: 'local',
+        value: 'C:\\Users\\happy\\Pictures\\emotes\\'
+      });
+      expect(parseUrlOrPath('file:///home/user/emotes/')).toEqual({
+        type: 'local',
+        value: '/home/user/emotes/'
+      });
+      expect(parseUrlOrPath('file:///home/user/my%20emotes/')).toEqual({
+        type: 'local',
+        value: '/home/user/my emotes/'
+      });
+      expect(parseUrlOrPath('file://localhost/home/user/emotes')).toEqual({
+        type: 'local',
+        value: '/home/user/emotes'
+      });
+    });
+
+    it('parses direct local filesystem paths for files and directories (Windows and Linux)', () => {
+      expect(parseUrlOrPath('C:\\Users\\happy\\Pictures\\emote.gif')).toEqual({
+        type: 'local',
+        value: 'C:\\Users\\happy\\Pictures\\emote.gif'
+      });
+      expect(parseUrlOrPath('D:/emotes/pack/')).toEqual({
+        type: 'local',
+        value: 'D:/emotes/pack/'
+      });
+      expect(parseUrlOrPath('/var/data/emotes')).toEqual({
+        type: 'local',
+        value: '/var/data/emotes'
+      });
+      expect(parseUrlOrPath('/home/user/Pictures/emotes/')).toEqual({
+        type: 'local',
+        value: '/home/user/Pictures/emotes/'
+      });
+      expect(parseUrlOrPath('~/Pictures/emotes')).toEqual({
+        type: 'local',
+        value: '~/Pictures/emotes'
+      });
+    });
+
+    it('parses web URLs and normalizes protocol when omitted', () => {
+      expect(parseUrlOrPath('https://example.com/emote.png')).toEqual({
+        type: 'web',
+        value: 'https://example.com/emote.png'
+      });
+      expect(parseUrlOrPath('http://example.com/dir/')).toEqual({
+        type: 'web',
+        value: 'http://example.com/dir/'
+      });
+      expect(parseUrlOrPath('cdn.discordapp.com/emojis/12345.webp')).toEqual({
+        type: 'web',
+        value: 'https://cdn.discordapp.com/emojis/12345.webp'
+      });
+    });
+
+    it('removes surrounding quotes from pasted paths', () => {
+      expect(parseUrlOrPath('"C:\\Users\\happy\\My Emotes"')).toEqual({
+        type: 'local',
+        value: 'C:\\Users\\happy\\My Emotes'
+      });
+      expect(parseUrlOrPath("'https://example.com/pic.png'")).toEqual({
+        type: 'web',
+        value: 'https://example.com/pic.png'
+      });
     });
   });
 });
