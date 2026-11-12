@@ -65,8 +65,18 @@ export const api = {
     invoke<BatchImportResult>('import_scanned_images', { items }),
   openExternalUrl: (url: string) =>
     invoke<void>('open_external_url', { url }),
-  downloadUpdateAsset: (url: string, filename: string) =>
-    invoke<string>('download_update_asset', { url, filename }),
+  downloadUpdateAsset: (
+    url: string,
+    filename: string,
+    expectedSha256?: string | null,
+    checksumUrl?: string | null
+  ) =>
+    invoke<string>('download_update_asset', {
+      url,
+      filename,
+      expectedSha256: expectedSha256 ?? null,
+      checksumUrl: checksumUrl ?? null
+    }),
   launchInstaller: (filePath: string) =>
     invoke<void>('launch_installer', { filePath }),
   getBgModelPresets: () => invoke<ModelPresetInfo[]>('get_bg_model_presets'),

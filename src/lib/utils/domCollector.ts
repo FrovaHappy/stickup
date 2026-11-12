@@ -206,6 +206,33 @@ export function generateBookmarklet(): string {
  * Parsea datos provenientes de la captura interactiva o el portapapeles.
  * Acepta JSON de StickUp Collector, listas de URLs o cadenas de texto.
  */
+export function isSafeHttpUrl(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function isAllowedCollectedUrl(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return false;
+  if (/^data:image\/(png|jpe?g|gif|webp)[;,]/i.test(trimmed)) {
+    return true;
+  }
+  return isSafeHttpUrl(trimmed);
+}
+
+/**
+ * Parsea la entrada del usuario pegada desde el Collector o un listado de URLs.
+ * Soporta:
+ * 1. JSON estructurado del Bookmarklet/Snippet (`{ stickup_collector_v1, source, items }`)
+ * 2. JSON array simple de URLs o objetos `{ url, alt }`
+ * 3. Texto plano con una URL por línea
+ */
 export function parseCollectorInput(input: string): { items: RawScannedItem[]; source?: string } {
   const trimmed = input.trim();
   if (!trimmed) {
@@ -223,7 +250,7 @@ export function parseCollectorInput(input: string): { items: RawScannedItem[]; s
           for (const item of parsed) {
             const rawUrl = typeof item === 'string' ? item : String(item?.url || '');
             const url = rawUrl.trim();
-            if (!url || seen.has(url)) continue;
+            if (!url || !isAllowedCollectedUrl(url) || seen.has(url)) continue;
             seen.add(url);
             const alt = typeof item === 'object' && item?.alt ? String(item.alt).trim() || null : null;
             items.push({ url, alt });
@@ -237,12 +264,16 @@ export function parseCollectorInput(input: string): { items: RawScannedItem[]; s
           for (const item of parsed.items) {
             const rawUrl = typeof item === 'string' ? item : String(item?.url || '');
             const url = rawUrl.trim();
-            if (!url || seen.has(url)) continue;
+            if (!url || !isAllowedCollectedUrl(url) || seen.has(url)) continue;
             seen.add(url);
             const alt = typeof item === 'object' && item?.alt ? String(item.alt).trim() || null : null;
             items.push({ url, alt });
           }
-          return { items, source: parsed.source || undefined };
+          const safeSource =
+            typeof parsed.source === 'string' && isSafeHttpUrl(parsed.source)
+              ? parsed.source.trim()
+              : undefined;
+          return { items, source: safeSource };
         }
       }
     } catch (_) {
@@ -260,7 +291,7 @@ export function parseCollectorInput(input: string): { items: RawScannedItem[]; s
     if (!line) continue;
     const tokens = line.split(/\s+/);
     const candidateUrl = tokens[0] || '';
-    if (candidateUrl.startsWith('http://') || candidateUrl.startsWith('https://') || candidateUrl.startsWith('data:image/')) {
+    if (isAllowedCollectedUrl(candidateUrl)) {
       if (!seen.has(candidateUrl)) {
         seen.add(candidateUrl);
         const remaining = tokens.slice(1).join(' ').replace(/^[#;/\s]+/, '').trim();

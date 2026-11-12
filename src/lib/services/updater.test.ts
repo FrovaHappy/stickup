@@ -222,5 +222,46 @@ describe('Updater Service - checkUpdateFromReleases', () => {
 
     expect(result.hasUpdate).toBe(false);
   });
+
+  it('extracts checksumUrl and asset digest when SHA256SUMS.txt is attached', () => {
+    const releaseWithSums: GitHubRelease[] = [
+      {
+        id: 201,
+        tag_name: 'v0.9.0',
+        name: 'v0.9.0',
+        body: 'Secure release',
+        published_at: new Date().toISOString(),
+        html_url: 'https://github.com/FrovaHappy/stickup/releases/tag/v0.9.0',
+        prerelease: false,
+        draft: false,
+        assets: [
+          {
+            id: 10,
+            name: 'StickUp_0.9.0_x64-setup.exe',
+            browser_download_url:
+              'https://github.com/FrovaHappy/stickup/releases/download/v0.9.0/StickUp_0.9.0_x64-setup.exe',
+            size: 5000,
+            content_type: 'application/octet-stream',
+            digest: 'sha256:' + 'a'.repeat(64)
+          },
+          {
+            id: 11,
+            name: 'SHA256SUMS.txt',
+            browser_download_url:
+              'https://github.com/FrovaHappy/stickup/releases/download/v0.9.0/SHA256SUMS.txt',
+            size: 128,
+            content_type: 'text/plain'
+          }
+        ]
+      }
+    ];
+
+    const res = checkUpdateFromReleases('0.2.0', releaseWithSums, { platform: 'windows' });
+    expect(res.hasUpdate).toBe(true);
+    expect(res.matchedAsset?.digest).toBe('sha256:' + 'a'.repeat(64));
+    expect(res.checksumUrl).toBe(
+      'https://github.com/FrovaHappy/stickup/releases/download/v0.9.0/SHA256SUMS.txt'
+    );
+  });
 });
 

@@ -51,6 +51,12 @@ pub fn run() {
         .setup(|app| {
             // Asegura la base de datos y crea la copia automática por actualización antes de iniciar
             let initial_minimize = if let Ok(conn) = db::ensure_db() {
+                let emotes_dir = db::get_active_emotes_dir(&conn);
+                let db_dir = db::get_active_db_dir();
+                let _ = tauri::Manager::asset_protocol_scope(app)
+                    .allow_directory(&emotes_dir, true);
+                let _ = tauri::Manager::asset_protocol_scope(app)
+                    .allow_directory(&db_dir, true);
                 db::get_minimize_to_tray(&conn)
             } else {
                 false

@@ -146,6 +146,67 @@ pub fn copy_file_and_image_to_clipboard(
     }
 }
 
+const MAX_CLIPBOARD_DIM: u32 = 16_384;
+const MAX_CLIPBOARD_BYTES: usize = 128 * 1024 * 1024;
+const MAX_CLIPBOARD_TEXT_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Debug, PartialEq, Eq)]
+struct DibLayout {
+    row_stride: usize,
+    pixel_offset: usize,
+    rgba_bytes: usize,
+    bytes_per_px: usize,
+}
+
+fn compute_dib_layout(
+    width: u32,
+    height: u32,
+    bit_count: u16,
+    header_size: usize,
+    is_bitfields: bool,
+    total_size: usize,
+) -> Option<DibLayout> {
+    if width == 0 || height == 0 || width > MAX_CLIPBOARD_DIM || height > MAX_CLIPBOARD_DIM {
+        return None;
+    }
+    if bit_count != 32 && bit_count != 24 {
+        return None;
+    }
+    if header_size < size_of::<BITMAPINFOHEADER>() || header_size > total_size {
+        return None;
+    }
+
+    let bytes_per_px = (bit_count / 8) as usize;
+    let bits_per_row = width.checked_mul(bit_count as u32)?;
+    let row_words = bits_per_row.checked_add(31)? / 32;
+    let row_stride = (row_words.checked_mul(4)?) as usize;
+
+    let pixel_offset = if is_bitfields {
+        header_size.checked_add(12)?
+    } else {
+        header_size
+    };
+    let dib_pixel_bytes = row_stride.checked_mul(height as usize)?;
+    let needed = pixel_offset.checked_add(dib_pixel_bytes)?;
+    if total_size < needed {
+        return None;
+    }
+
+    let rgba_bytes = (width as usize)
+        .checked_mul(height as usize)?
+        .checked_mul(4)?;
+    if rgba_bytes > MAX_CLIPBOARD_BYTES {
+        return None;
+    }
+
+    Some(DibLayout {
+        row_stride,
+        pixel_offset,
+        rgba_bytes,
+        bytes_per_px,
+    })
+}
+
 pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
     unsafe {
         if OpenClipboard(0 as HWND) == 0 {
@@ -202,7 +263,7 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
                     if !h_data.is_null() {
                         let size = GlobalSize(h_data);
                         let ptr_data = GlobalLock(h_data) as *const u8;
-                        if !ptr_data.is_null() && size > 0 {
+                        if !ptr_data.is_null() && size > 0 && size <= MAX_CLIPBOARD_BYTES {
                             let mut bytes = vec![0u8; size];
                             ptr::copy_nonoverlapping(ptr_data, bytes.as_mut_ptr(), size);
                             GlobalUnlock(h_data);
@@ -231,64 +292,66 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
                     let bit_count = bmi.biBitCount;
                     let header_size = bmi.biSize as usize;
 
-                    if width > 0 && height > 0 && (bit_count == 32 || bit_count == 24) {
-                        let bytes_per_px = (bit_count / 8) as u32;
-                        let row_stride = ((width * (bit_count as u32) + 31) / 32) * 4;
-                        let mut pixel_offset = header_size;
-                        // Si biCompression == BI_BITFIELDS (3), hay 12 bytes extra de máscaras de color
-                        if bmi.biCompression == 3 && total_size >= header_size + 12 {
-                            pixel_offset += 12;
+                    if let Some(layout) = compute_dib_layout(
+                        width,
+                        height,
+                        bit_count,
+                        header_size,
+                        bmi.biCompression == 3,
+                        total_size,
+                    ) {
+                        let pixels = p_dib.add(layout.pixel_offset);
+                        let mut rgba = vec![0u8; layout.rgba_bytes];
+                        let mut any_nonzero_alpha = false;
+
+                        for y in 0..height as usize {
+                            let src_y = if is_bottom_up {
+                                (height as usize) - 1 - y
+                            } else {
+                                y
+                            };
+                            let src_row = src_y * layout.row_stride;
+                            let dst_row = y * (width as usize) * 4;
+
+                            for x in 0..width as usize {
+                                let s = src_row + x * layout.bytes_per_px;
+                                let d = dst_row + x * 4;
+                                let b = *pixels.add(s);
+                                let g = *pixels.add(s + 1);
+                                let r = *pixels.add(s + 2);
+                                let a = if bit_count == 32 {
+                                    let alpha = *pixels.add(s + 3);
+                                    if alpha != 0 {
+                                        any_nonzero_alpha = true;
+                                    }
+                                    alpha
+                                } else {
+                                    255
+                                };
+
+                                rgba[d] = r;
+                                rgba[d + 1] = g;
+                                rgba[d + 2] = b;
+                                rgba[d + 3] = a;
+                            }
                         }
 
-                        let needed = pixel_offset + (row_stride * height) as usize;
-                        if total_size >= needed {
-                            let pixels = p_dib.add(pixel_offset);
-                            let mut rgba = vec![0u8; (width * height * 4) as usize];
-                            let mut any_nonzero_alpha = false;
-
-                            for y in 0..height {
-                                let src_y = if is_bottom_up { height - 1 - y } else { y };
-                                let src_row = (src_y * row_stride) as usize;
-                                let dst_row = (y * width * 4) as usize;
-
-                                for x in 0..width {
-                                    let s = src_row + (x * bytes_per_px) as usize;
-                                    let d = dst_row + (x * 4) as usize;
-                                    let b = *pixels.add(s);
-                                    let g = *pixels.add(s + 1);
-                                    let r = *pixels.add(s + 2);
-                                    let a = if bit_count == 32 {
-                                        let alpha = *pixels.add(s + 3);
-                                        if alpha != 0 {
-                                            any_nonzero_alpha = true;
-                                        }
-                                        alpha
-                                    } else {
-                                        255
-                                    };
-
-                                    rgba[d] = r;
-                                    rgba[d + 1] = g;
-                                    rgba[d + 2] = b;
-                                    rgba[d + 3] = a;
-                                }
+                        if bit_count == 32 && !any_nonzero_alpha {
+                            for px in rgba.chunks_exact_mut(4) {
+                                px[3] = 255;
                             }
-
-                            if bit_count == 32 && !any_nonzero_alpha {
-                                for px in rgba.chunks_exact_mut(4) {
-                                    px[3] = 255;
-                                }
-                            }
-
-                            GlobalUnlock(h_dib);
-                            CloseClipboard();
-                            return Ok(ClipboardPayload::RgbaImage {
-                                rgba,
-                                width,
-                                height,
-                            });
                         }
+
+                        GlobalUnlock(h_dib);
+                        CloseClipboard();
+                        return Ok(ClipboardPayload::RgbaImage {
+                            rgba,
+                            width,
+                            height,
+                        });
                     }
+                }
+                if !p_dib.is_null() {
                     GlobalUnlock(h_dib);
                 }
             }
@@ -300,7 +363,7 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
             if !h_text.is_null() {
                 let byte_size = GlobalSize(h_text);
                 let p_text = GlobalLock(h_text) as *const u16;
-                if !p_text.is_null() && byte_size >= 2 {
+                if !p_text.is_null() && byte_size >= 2 && byte_size <= MAX_CLIPBOARD_TEXT_BYTES {
                     let max_u16 = byte_size / 2;
                     let slice = std::slice::from_raw_parts(p_text, max_u16);
                     let end = slice.iter().position(|&c| c == 0).unwrap_or(max_u16);
@@ -344,6 +407,36 @@ pub fn read_from_clipboard() -> Result<ClipboardPayload, String> {
 
         CloseClipboard();
         Err("El portapapeles no contiene una imagen, URL o ruta de archivo/directorio válida".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_dib_layout_bounds_and_overflow() {
+        let hdr = size_of::<BITMAPINFOHEADER>();
+        // Caso válido: 100x50 32bpp
+        let valid = compute_dib_layout(100, 50, 32, hdr, false, hdr + 100 * 4 * 50);
+        assert_eq!(
+            valid,
+            Some(DibLayout {
+                row_stride: 400,
+                pixel_offset: hdr,
+                rgba_bytes: 20_000,
+                bytes_per_px: 4,
+            })
+        );
+
+        // Rechazar overflow / dimensiones exageradas
+        assert_eq!(compute_dib_layout(u32::MAX, 10, 32, hdr, false, usize::MAX), None);
+        assert_eq!(compute_dib_layout(16_385, 10, 32, hdr, false, usize::MAX), None);
+        assert_eq!(compute_dib_layout(16_384, 16_384, 32, hdr, false, usize::MAX), None);
+
+        // Rechazar header_size menor que BITMAPINFOHEADER o buffer truncado
+        assert_eq!(compute_dib_layout(10, 10, 32, 4, false, 1024), None);
+        assert_eq!(compute_dib_layout(100, 50, 32, hdr, false, hdr + 100), None);
     }
 }
 

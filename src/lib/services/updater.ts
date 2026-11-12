@@ -129,6 +129,16 @@ export function findPlatformAsset(
 }
 
 /**
+ * Busca el manifiesto de sumas SHA-256 adjunto a una release de GitHub.
+ */
+export function findChecksumAsset(assets: ReleaseAsset[]): ReleaseAsset | null {
+  if (!assets || assets.length === 0) return null;
+  return (
+    assets.find((a) => a.name.toLowerCase() === 'sha256sums.txt') || null
+  );
+}
+
+/**
  * Detecta la plataforma del sistema operativo en el navegador / WebView.
  */
 export function detectPlatform(): 'windows' | 'linux' | 'darwin' | 'other' {
@@ -197,6 +207,7 @@ export function checkUpdateFromReleases(
 
   const hotInfo = isHotRelease(topRelease.published_at, 24, nowMs);
   const matchedAsset = findPlatformAsset(topRelease.assets, platform);
+  const checksumAsset = findChecksumAsset(topRelease.assets);
 
   return {
     hasUpdate: true,
@@ -205,7 +216,8 @@ export function checkUpdateFromReleases(
     release: topRelease,
     isHot: hotInfo.isHot,
     hoursSincePublished: hotInfo.hours,
-    matchedAsset
+    matchedAsset,
+    checksumUrl: checksumAsset?.browser_download_url ?? null
   };
 }
 

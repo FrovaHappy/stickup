@@ -2,44 +2,14 @@ use crate::commands::to_pascal_case;
 use crate::models::{RawScannedItem, ScannedImage};
 use std::collections::HashSet;
 use std::path::Path;
-use std::process::Command;
 
-pub fn download_html(url: &str) -> Result<String, String> {
-    let clean_url = url.trim();
-    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
-        return Err("La URL debe comenzar con http:// o https://".to_string());
-    }
-
-    let mut cmd = Command::new("curl");
-    cmd.args([
-        "-L",
-        "-s",
-        "-S",
-        "-f",
-        "--max-time",
-        "25",
-        "-A",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        clean_url,
-    ]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Error al ejecutar curl: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Error al descargar página web: {}", stderr.trim()));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+pub async fn download_html(url: &str) -> Result<String, String> {
+    crate::services::net::fetch_text_limited(
+        url.trim(),
+        crate::services::net::MAX_HTML_DOWNLOAD_BYTES,
+        25,
+    )
+    .await
 }
 
 /// Extrae el origen (esquema + host + puerto opcional) de una URL base
@@ -78,31 +48,53 @@ pub fn unescape_html_entities(s: &str) -> String {
         .replace("&gt;", ">")
 }
 
+fn is_safe_raster_data_image(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.starts_with("data:image/png")
+        || lower.starts_with("data:image/jpeg")
+        || lower.starts_with("data:image/jpg")
+        || lower.starts_with("data:image/gif")
+        || lower.starts_with("data:image/webp")
+}
+
 /// Resuelve una URL candidata relativa contra la URL base
 pub fn resolve_url(candidate: &str, base_url: Option<&str>) -> Option<String> {
     let unescaped = unescape_html_entities(candidate);
     let clean = unescaped.trim().trim_matches(|c| c == '\'' || c == '"');
-    if clean.is_empty() || clean.starts_with('#') || clean.starts_with("javascript:") {
+    if clean.is_empty() || clean.starts_with('#') || clean.chars().any(|c| c.is_control()) {
         return None;
     }
 
-    if clean.starts_with("data:image/") {
+    if is_safe_raster_data_image(clean) {
         return Some(clean.to_string());
     }
 
-    if clean.starts_with("http://") || clean.starts_with("https://") {
+    let lower = clean.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
         return Some(clean.to_string());
+    }
+
+    // Rechazar cualquier pseudo-esquema explícito (javascript:, vbscript:, data:image/svg+xml, file:, etc.)
+    if let Some(colon_idx) = clean.find(':') {
+        let before_colon = &clean[..colon_idx];
+        if !before_colon.contains('/') && !before_colon.contains('?') && !before_colon.contains('#')
+        {
+            return None;
+        }
     }
 
     if clean.starts_with("//") {
         let scheme = base_url
-            .and_then(|b| b.split("://").next())
-            .unwrap_or("https");
+            .and_then(|b| b.trim().split("://").next())
+            .map(|s| s.to_ascii_lowercase())
+            .filter(|s| s == "http" || s == "https")
+            .unwrap_or_else(|| "https".to_string());
         return Some(format!("{}:{}", scheme, clean));
     }
 
     let base = base_url?.trim();
-    if base.is_empty() {
+    let base_lower = base.to_ascii_lowercase();
+    if base.is_empty() || (!base_lower.starts_with("http://") && !base_lower.starts_with("https://")) {
         return None;
     }
 
@@ -601,23 +593,9 @@ pub fn process_scanned_urls(items: &[RawScannedItem], base_url: Option<&str>) ->
             continue;
         }
 
-        if clean.starts_with("data:image/") {
-            if seen.insert(clean.to_string()) {
-                let name = suggest_name(clean, item.alt.as_deref());
-                let fmt = infer_format(clean);
-                results.push(ScannedImage {
-                    url: clean.to_string(),
-                    alt: item.alt.clone(),
-                    suggested_name: name,
-                    format_hint: fmt,
-                });
-            }
-            continue;
-        }
-
         let resolved = match resolve_url(clean, base_url) {
             Some(u) => u,
-            None => clean.to_string(),
+            None => continue,
         };
 
         if resolved.is_empty() {
@@ -932,5 +910,48 @@ mod tests {
         assert_eq!(results[2].url, "https://cdn.discordapp.com/emojis/999888.gif");
         assert_eq!(results[2].suggested_name, "VibeParty");
         assert_eq!(results[2].format_hint, Some("gif".to_string()));
+    }
+
+    #[test]
+    fn test_process_scanned_urls_blocks_unsafe_schemes() {
+        let items = vec![
+            RawScannedItem {
+                url: "javascript:alert(1)".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "JaVaScRiPt:alert(document.domain)".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "vbscript:msgbox(1)".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "data:text/html,<script>alert(1)</script>".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "data:image/svg+xml;base64,PHN2Zy8+".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "file:///C:/Windows/win.ini".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "/relative/only.png".to_string(),
+                alt: None,
+            },
+            RawScannedItem {
+                url: "data:image/png;base64,iVBORw0KGgo=".to_string(),
+                alt: Some("safe".to_string()),
+            },
+        ];
+
+        // Sin base_url: las rutas relativas y pseudo-esquemas deben descartarse sin hacer fallback inseguro
+        let results = process_scanned_urls(&items, None);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "data:image/png;base64,iVBORw0KGgo=");
     }
 }

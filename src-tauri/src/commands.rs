@@ -10,16 +10,69 @@ use image::codecs::gif::{GifDecoder, GifEncoder, Repeat};
 use image::codecs::webp::WebPDecoder;
 use image::{AnimationDecoder, Delay, Frame, GenericImageView, ImageDecoder, ImageFormat};
 use rusqlite::{params, Connection, OptionalExtension};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "windows"))]
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 static CLIPBOARD_LOCK: Mutex<Option<Instant>> = Mutex::new(None);
+static VERIFIED_INSTALLERS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+fn verified_installers() -> &'static Mutex<HashSet<PathBuf>> {
+    VERIFIED_INSTALLERS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[cfg(target_os = "windows")]
+fn shell_open_windows(target: &str) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let verb: Vec<u16> = OsStr::new("open").encode_wide().chain(Some(0)).collect();
+    let file: Vec<u16> = OsStr::new(target).encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if (result as isize) <= 32 {
+        return Err(format!(
+            "No se pudo abrir '{}': error Win32 ({})",
+            target, result as isize
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_emote_path_in_active_dir(
+    conn: &Connection,
+    raw_path: &str,
+) -> Result<PathBuf, String> {
+    let clean = clean_path_str(raw_path);
+    let path = PathBuf::from(&clean);
+    let emotes_dir = get_active_emotes_dir(conn);
+    let canonical_dir = emotes_dir
+        .canonicalize()
+        .map_err(|e| format!("Carpeta de emotes inaccesible: {}", e))?;
+    let canonical_file = path
+        .canonicalize()
+        .map_err(|e| format!("Archivo de emote no encontrado: {}", e))?;
+    if !canonical_file.starts_with(&canonical_dir) || !canonical_file.is_file() {
+        return Err("Ruta de emote fuera del directorio activo de almacenamiento".to_string());
+    }
+    Ok(canonical_file)
+}
 
 fn extract_stem(path: &Path) -> String {
     path.file_stem()
@@ -370,13 +423,15 @@ pub fn list_emotes() -> Result<Vec<Emote>, String> {
 }
 
 #[tauri::command]
-pub fn get_storage_path() -> Result<String, String> {
+pub fn get_storage_path(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
     let conn = ensure_db()?;
     let dir = get_active_emotes_dir(&conn);
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }
     let abs = dir.canonicalize().unwrap_or(dir);
+    let _ = app.asset_protocol_scope().allow_directory(&abs, true);
     Ok(normalize_path(&abs))
 }
 
@@ -574,18 +629,30 @@ fn merge_secondary_db_into_primary(secondary_db: &Path, primary_db: &Path, targe
 
 #[tauri::command]
 pub fn set_storage_path(
+    app: tauri::AppHandle,
     path: String,
     migrate: Option<bool>,
     overwrite_db: Option<bool>,
 ) -> Result<String, String> {
-    let p = PathBuf::from(&path);
+    use tauri::Manager;
+    let trimmed_input = path.trim();
+    if trimmed_input.is_empty() {
+        return Err("La ruta de almacenamiento no puede estar vacía".to_string());
+    }
+    if trimmed_input.to_lowercase().contains("src-tauri") {
+        return Err(
+            "No se puede ubicar la carpeta de emotes y base de datos dentro de src-tauri"
+                .to_string(),
+        );
+    }
+    let p = PathBuf::from(trimmed_input);
     if !p.exists() {
         fs::create_dir_all(&p).map_err(|e| format!("No se pudo crear la carpeta: {}", e))?;
     }
     let abs = p.canonicalize().unwrap_or(p);
     let abs_str = normalize_path(&abs);
 
-    if abs_str.contains("src-tauri") {
+    if abs_str.to_lowercase().contains("src-tauri") {
         return Err(
             "No se puede ubicar la carpeta de emotes y base de datos dentro de src-tauri"
                 .to_string(),
@@ -727,6 +794,8 @@ pub fn set_storage_path(
     if should_migrate {
         let _ = resync_emotes();
     }
+
+    let _ = app.asset_protocol_scope().allow_directory(&abs, true);
 
     Ok(abs_str)
 }
@@ -968,45 +1037,20 @@ pub fn import_raw_bytes(bytes: Vec<u8>, name: Option<String>) -> Result<Emote, S
     save_raw_bytes_as_emote(&bytes, clean_name)
 }
 
-fn download_url_bytes(url: &str) -> Result<Vec<u8>, String> {
-    let mut cmd = Command::new("curl");
-    cmd.args([
-        "-L",
-        "-s",
-        "-S",
-        "-f",
-        "--max-time",
-        "25",
-        "-A",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StickUp/1.0",
+async fn download_url_bytes(url: &str) -> Result<Vec<u8>, String> {
+    crate::services::net::fetch_bytes_limited(
         url,
-    ]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("No se pudo descargar desde la URL: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Error al descargar la URL: {}", stderr.trim()));
-    }
-
-    Ok(output.stdout)
+        crate::services::net::MAX_IMAGE_DOWNLOAD_BYTES,
+        25,
+        Some("image/webp,image/png,image/gif,image/jpeg,image/*;q=0.9,*/*;q=0.5"),
+    )
+    .await
 }
 
 #[tauri::command]
-pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, String> {
+pub async fn import_from_url(url: String, name: Option<String>) -> Result<Emote, String> {
     let clean_url = url.trim();
-    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
-        return Err("La URL debe comenzar con http:// o https://".to_string());
-    }
+    crate::services::net::validate_public_http_url_syntax(clean_url)?;
 
     let url_without_query = clean_url.split('?').next().unwrap_or(clean_url);
     if let Some(idx) = url_without_query.rfind('.') {
@@ -1027,9 +1071,9 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
     }
 
     let normalized_url = normalize_download_url(clean_url);
-    let bytes = match download_url_bytes(&normalized_url) {
+    let bytes = match download_url_bytes(&normalized_url).await {
         Ok(b) if !b.is_empty() => b,
-        Err(_) | Ok(_) if normalized_url != clean_url => download_url_bytes(clean_url)?,
+        Err(_) | Ok(_) if normalized_url != clean_url => download_url_bytes(clean_url).await?,
         Err(e) => return Err(e),
         Ok(b) => b,
     };
@@ -1045,7 +1089,7 @@ pub fn import_from_url(url: String, name: Option<String>) -> Result<Emote, Strin
 }
 
 #[tauri::command]
-pub fn import_from_clipboard(name: Option<String>) -> Result<Vec<Emote>, String> {
+pub async fn import_from_clipboard(name: Option<String>) -> Result<Vec<Emote>, String> {
     {
         let mut lock = CLIPBOARD_LOCK.lock().map_err(|e| e.to_string())?;
         let now = Instant::now();
@@ -1146,7 +1190,7 @@ pub fn import_from_clipboard(name: Option<String>) -> Result<Vec<Emote>, String>
             Ok(vec![emote])
         }
         ClipboardPayload::TextUrl(url) => {
-            let emote = import_from_url(url, custom_name)?;
+            let emote = import_from_url(url, custom_name).await?;
             Ok(vec![emote])
         }
     }
@@ -1321,7 +1365,11 @@ pub fn delete_emote(id: i64) -> Result<bool, String> {
         .optional()
         .map_err(|e| e.to_string())?;
     if let Some(p) = path {
-        let _ = fs::remove_file(Path::new(&p));
+        let clean = clean_path_str(&p);
+        if fs::symlink_metadata(Path::new(&clean)).is_ok() {
+            let safe_path = resolve_emote_path_in_active_dir(&conn, &clean)?;
+            fs::remove_file(safe_path).map_err(|e| format!("No se pudo eliminar el emote: {}", e))?;
+        }
     }
     let _ = conn.execute("DELETE FROM emote_votes WHERE emote_id = ?1", params![id]);
     conn.execute("DELETE FROM emotes WHERE id = ?1", params![id])
@@ -1776,8 +1824,8 @@ pub fn get_emote_gif_loop(id: i64) -> Result<crate::services::gif::GifLoopStatus
             |r| r.get(0),
         )
         .map_err(|e| format!("Emote no encontrado: {}", e))?;
-    let clean = clean_path_str(&path);
-    let bytes = fs::read(&clean).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
+    let safe_path = resolve_emote_path_in_active_dir(&conn, &path)?;
+    let bytes = fs::read(&safe_path).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
     crate::services::gif::inspect_gif_loop(&bytes)
 }
 
@@ -1794,10 +1842,10 @@ pub fn set_emote_gif_loop(
             |r| r.get(0),
         )
         .map_err(|e| format!("Emote no encontrado: {}", e))?;
-    let clean = clean_path_str(&path);
-    let bytes = fs::read(&clean).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
+    let safe_path = resolve_emote_path_in_active_dir(&conn, &path)?;
+    let bytes = fs::read(&safe_path).map_err(|e| format!("No se pudo leer el archivo: {}", e))?;
     let patched = crate::services::gif::patch_gif_loop(&bytes, infinite)?;
-    fs::write(&clean, &patched).map_err(|e| format!("No se pudo escribir el archivo: {}", e))?;
+    fs::write(&safe_path, &patched).map_err(|e| format!("No se pudo escribir el archivo: {}", e))?;
     crate::services::gif::inspect_gif_loop(&patched)
 }
 
@@ -1904,8 +1952,10 @@ pub fn decode_base64(input: &str) -> Option<Vec<u8>> {
 }
 
 #[tauri::command]
-pub fn scan_url(url: String) -> Result<Vec<crate::models::ScannedImage>, String> {
+pub async fn scan_url(url: String) -> Result<Vec<crate::models::ScannedImage>, String> {
     let clean_url = url.trim();
+    crate::services::net::validate_public_http_url_syntax(clean_url)?;
+
     if crate::services::scanner::is_direct_image_url(clean_url) {
         let resolved = if crate::services::scanner::is_discord_cdn_url(clean_url) {
             crate::services::scanner::normalize_discord_url(clean_url)
@@ -1922,7 +1972,7 @@ pub fn scan_url(url: String) -> Result<Vec<crate::models::ScannedImage>, String>
         }]);
     }
 
-    let html = crate::services::scanner::download_html(clean_url)?;
+    let html = crate::services::scanner::download_html(clean_url).await?;
     Ok(crate::services::scanner::extract_images_from_html(
         &html,
         Some(clean_url),
@@ -1952,7 +2002,7 @@ pub fn process_scanned_urls(
 }
 
 #[tauri::command]
-pub fn import_scanned_images(
+pub async fn import_scanned_images(
     items: Vec<crate::models::ScannedImageImportRequest>,
 ) -> Result<crate::models::BatchImportResult, String> {
     let mut imported = Vec::new();
@@ -1960,6 +2010,7 @@ pub fn import_scanned_images(
 
     for item in items {
         let clean_url = item.url.trim();
+        let lower_url = clean_url.to_ascii_lowercase();
         let name_opt = item
             .name
             .as_deref()
@@ -1967,9 +2018,17 @@ pub fn import_scanned_images(
             .filter(|s| !s.is_empty())
             .map(String::from);
 
-        if clean_url.starts_with("data:image/") {
+        if lower_url.starts_with("data:image/") {
+            if lower_url.starts_with("data:image/svg") {
+                errors.push("Imágenes SVG no están permitidas por seguridad".to_string());
+                continue;
+            }
             if let Some(comma_idx) = clean_url.find(',') {
                 let base64_str = &clean_url[comma_idx + 1..];
+                if base64_str.len() > 40 * 1024 * 1024 {
+                    errors.push("Imagen base64 excede el tamaño máximo permitido".to_string());
+                    continue;
+                }
                 if let Some(bytes) = decode_base64(base64_str) {
                     let target_name = name_opt.unwrap_or_else(|| "ScannedDataImage".to_string());
                     match save_raw_bytes_as_emote(&bytes, &target_name) {
@@ -1983,7 +2042,7 @@ pub fn import_scanned_images(
                 errors.push("Formato de URI de datos incompleto".to_string());
             }
         } else {
-            match import_from_url(clean_url.to_string(), name_opt) {
+            match import_from_url(clean_url.to_string(), name_opt).await {
                 Ok(emote) => imported.push(emote),
                 Err(e) => errors.push(format!("{}: {}", clean_url, e)),
             }
@@ -2011,27 +2070,116 @@ fn sanitize_installer_filename(raw: &str) -> String {
         .collect()
 }
 
+fn get_downloads_dir() -> PathBuf {
+    if cfg!(target_os = "windows") {
+        std::env::var("USERPROFILE")
+            .map(|p| PathBuf::from(p).join("Downloads"))
+            .ok()
+    } else {
+        std::env::var("HOME")
+            .map(|p| PathBuf::from(p).join("Downloads"))
+            .ok()
+    }
+    .unwrap_or_else(std::env::temp_dir)
+}
+
+fn is_allowed_installer_ext(path: &Path) -> bool {
+    let name_lower = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    [".exe", ".msi", ".appimage", ".deb", ".rpm", ".dmg", ".pkg"]
+        .iter()
+        .any(|ext| name_lower.ends_with(ext))
+}
+
+fn validate_installer_launch_path(
+    file_path: &str,
+    downloads_dir: &Path,
+    verified_set: &HashSet<PathBuf>,
+) -> Result<PathBuf, String> {
+    let canonical_downloads = downloads_dir
+        .canonicalize()
+        .map_err(|_| "Carpeta de descargas inaccesible".to_string())?;
+    let canonical_file = Path::new(file_path.trim())
+        .canonicalize()
+        .map_err(|_| "El archivo del instalador no existe en el disco".to_string())?;
+    if !canonical_file.is_file() {
+        return Err("La ruta del instalador no corresponde a un archivo válido".to_string());
+    }
+    if !canonical_file.starts_with(&canonical_downloads) {
+        return Err(
+            "Solo se permiten instaladores dentro de la carpeta de Descargas".to_string(),
+        );
+    }
+    if !is_allowed_installer_ext(&canonical_file) {
+        return Err("Extensión de instalador no permitida".to_string());
+    }
+    if !verified_set.contains(&canonical_file) {
+        return Err("El instalador no ha sido verificado en esta sesión".to_string());
+    }
+    Ok(canonical_file)
+}
+
+async fn resolve_expected_update_sha256(
+    asset_url: &reqwest::Url,
+    remote_asset_name: &str,
+    safe_filename: &str,
+    expected_sha256: Option<&str>,
+    checksum_url: Option<&str>,
+) -> Result<String, String> {
+    if let Some(raw_expected) = expected_sha256 {
+        let trimmed = raw_expected.trim();
+        if !trimmed.is_empty() {
+            return crate::services::net::normalize_sha256_hex(trimmed).ok_or_else(|| {
+                "El checksum SHA-256 provisto para la actualización tiene un formato inválido"
+                    .to_string()
+            });
+        }
+    }
+
+    let sums_url = if let Some(raw_cs) = checksum_url {
+        crate::services::net::validate_github_release_asset_url(raw_cs)?
+    } else {
+        let mut sibling = asset_url.clone();
+        if let Ok(mut segments) = sibling.path_segments_mut() {
+            segments.pop_if_empty();
+            segments.pop();
+            segments.push("SHA256SUMS.txt");
+        }
+        crate::services::net::validate_github_release_asset_url(sibling.as_str())?
+    };
+
+    let (response, _) =
+        crate::services::net::send_get_tracked(sums_url.as_str(), 30, Some("text/plain"), true)
+            .await?;
+    let bytes = crate::services::net::read_response_bytes_limited(response, 1024 * 1024).await?;
+    let sums_text = String::from_utf8_lossy(&bytes);
+
+    crate::services::net::parse_sha256_sums_for_asset(&sums_text, remote_asset_name)
+        .or_else(|| crate::services::net::parse_sha256_sums_for_asset(&sums_text, safe_filename))
+        .ok_or_else(|| {
+            format!(
+                "No se encontró suma SHA-256 verificable en SHA256SUMS.txt para '{}'",
+                remote_asset_name
+            )
+        })
+}
+
 #[tauri::command]
 pub fn open_external_url(url: String) -> Result<(), String> {
-    let clean_url = url.trim();
-    if !clean_url.starts_with("https://") && !clean_url.starts_with("http://") {
-        return Err("Solo se permiten URLs seguras (http/https)".to_string());
-    }
+    let clean_url = crate::services::net::validate_external_open_url(&url)?;
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/c", "start", "", clean_url]);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.spawn().map_err(|e| e.to_string())?;
+        shell_open_windows(&clean_url)?;
     }
 
     #[cfg(target_os = "linux")]
     {
         Command::new("xdg-open")
-            .arg(clean_url)
+            .arg(&clean_url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -2039,7 +2187,7 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
-            .arg(clean_url)
+            .arg(&clean_url)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -2048,57 +2196,64 @@ pub fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn download_update_asset(url: String, filename: String) -> Result<String, String> {
-    let clean_url = url.trim();
-    if !clean_url.starts_with("https://") && !clean_url.starts_with("http://") {
-        return Err("URL de descarga no válida".to_string());
-    }
-
+pub async fn download_update_asset(
+    url: String,
+    filename: String,
+    expected_sha256: Option<String>,
+    checksum_url: Option<String>,
+) -> Result<String, String> {
+    let parsed_asset_url = crate::services::net::validate_github_release_asset_url(&url)?;
     let safe_filename = sanitize_installer_filename(&filename);
-    let downloads_dir = if cfg!(target_os = "windows") {
-        std::env::var("USERPROFILE")
-            .map(|p| std::path::PathBuf::from(p).join("Downloads"))
-            .ok()
-    } else {
-        std::env::var("HOME")
-            .map(|p| std::path::PathBuf::from(p).join("Downloads"))
-            .ok()
+    if !is_allowed_installer_ext(Path::new(&safe_filename)) {
+        return Err("Tipo de archivo de actualización no permitido".to_string());
     }
-    .unwrap_or_else(std::env::temp_dir);
 
+    let remote_asset_name = parsed_asset_url
+        .path_segments()
+        .and_then(|mut segs| segs.next_back())
+        .map(str::to_string)
+        .unwrap_or_else(|| safe_filename.clone());
+
+    let expected_hash = resolve_expected_update_sha256(
+        &parsed_asset_url,
+        &remote_asset_name,
+        &safe_filename,
+        expected_sha256.as_deref(),
+        checksum_url.as_deref(),
+    )
+    .await?;
+
+    let downloads_dir = get_downloads_dir();
     if !downloads_dir.exists() {
-        let _ = fs::create_dir_all(&downloads_dir);
+        fs::create_dir_all(&downloads_dir)
+            .map_err(|e| format!("No se pudo crear la carpeta de descargas: {}", e))?;
     }
 
     let dest = downloads_dir.join(&safe_filename);
+    let tmp = downloads_dir.join(format!("{}.tmp", safe_filename));
 
-    let mut cmd = Command::new("curl");
-    cmd.args([
-        "-L",
-        "-f",
-        "-s",
-        "-S",
-        "--connect-timeout",
-        "15",
-        "-o",
-    ]);
-    cmd.arg(&dest);
-    cmd.arg(clean_url);
+    let (response, _) = crate::services::net::send_get_tracked(
+        parsed_asset_url.as_str(),
+        300,
+        None,
+        true,
+    )
+    .await?;
 
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    crate::services::net::stream_response_to_file_verified(
+        response,
+        &tmp,
+        &dest,
+        1024,
+        crate::services::net::MAX_UPDATE_DOWNLOAD_BYTES,
+        Some(&expected_hash),
+        |_, _| {},
+    )
+    .await?;
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Error ejecutando curl para la descarga: {}", e))?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Fallo en la descarga de la actualización: {}", err));
+    let canonical_dest = dest.canonicalize().unwrap_or_else(|_| dest.clone());
+    if let Ok(mut set) = verified_installers().lock() {
+        set.insert(canonical_dest);
     }
 
     Ok(dest.to_string_lossy().to_string())
@@ -2106,19 +2261,18 @@ pub fn download_update_asset(url: String, filename: String) -> Result<String, St
 
 #[tauri::command]
 pub fn launch_installer(file_path: String) -> Result<(), String> {
-    let path = std::path::Path::new(&file_path);
-    if !path.exists() {
-        return Err("El archivo del instalador no existe en el disco".to_string());
-    }
+    let downloads_dir = get_downloads_dir();
+    let verified = verified_installers()
+        .lock()
+        .map_err(|_| "Estado de instaladores bloqueado".to_string())?;
+    let safe_path = validate_installer_launch_path(&file_path, &downloads_dir, &verified)?;
+    drop(verified);
+
+    let safe_path_str = safe_path.to_string_lossy().to_string();
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/c", "start", "", &file_path]);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.spawn().map_err(|e| e.to_string())?;
+        shell_open_windows(&safe_path_str)?;
     }
 
     #[cfg(target_os = "linux")]
@@ -2126,15 +2280,15 @@ pub fn launch_installer(file_path: String) -> Result<(), String> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = std::fs::metadata(&file_path) {
+            if let Ok(meta) = std::fs::metadata(&safe_path) {
                 let mut perms = meta.permissions();
                 perms.set_mode(0o755);
-                let _ = std::fs::set_permissions(&file_path, perms);
+                let _ = std::fs::set_permissions(&safe_path, perms);
             }
         }
 
         Command::new("xdg-open")
-            .arg(&file_path)
+            .arg(&safe_path_str)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -2142,7 +2296,7 @@ pub fn launch_installer(file_path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
-            .arg(&file_path)
+            .arg(&safe_path_str)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -2952,5 +3106,81 @@ mod tests {
             percent_decode_path("pepe%20frog%21"),
             "pepe frog!".to_string()
         );
+    }
+
+    #[test]
+    fn test_validate_installer_launch_path_blocks_unverified_and_outside_files() {
+        let base = std::env::temp_dir().join(format!("stickup_test_inst_{}", uuid::Uuid::new_v4()));
+        let downloads = base.join("Downloads");
+        let other = base.join("Other");
+        fs::create_dir_all(&downloads).unwrap();
+        fs::create_dir_all(&other).unwrap();
+
+        let verified_exe = downloads.join("StickUp_setup.exe");
+        let unverified_exe = downloads.join("Other_setup.exe");
+        let bad_ext = downloads.join("payload.ps1");
+        let outside_exe = other.join("outside.exe");
+        fs::write(&verified_exe, b"MZ").unwrap();
+        fs::write(&unverified_exe, b"MZ").unwrap();
+        fs::write(&bad_ext, b"echo hi").unwrap();
+        fs::write(&outside_exe, b"MZ").unwrap();
+
+        let mut verified_set = HashSet::new();
+        verified_set.insert(verified_exe.canonicalize().unwrap());
+
+        assert!(validate_installer_launch_path(
+            &verified_exe.to_string_lossy(),
+            &downloads,
+            &verified_set
+        )
+        .is_ok());
+        assert!(validate_installer_launch_path(
+            &unverified_exe.to_string_lossy(),
+            &downloads,
+            &verified_set
+        )
+        .is_err());
+        assert!(validate_installer_launch_path(
+            &bad_ext.to_string_lossy(),
+            &downloads,
+            &verified_set
+        )
+        .is_err());
+        assert!(validate_installer_launch_path(
+            &outside_exe.to_string_lossy(),
+            &downloads,
+            &verified_set
+        )
+        .is_err());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_resolve_emote_path_in_active_dir_blocks_traversal() {
+        let base = std::env::temp_dir().join(format!("stickup_test_emote_{}", uuid::Uuid::new_v4()));
+        let emotes_dir = base.join("emotes");
+        fs::create_dir_all(&emotes_dir).unwrap();
+        let inside = emotes_dir.join("ok.png");
+        let outside = base.join("secret.txt");
+        fs::write(&inside, b"png").unwrap();
+        fs::write(&outside, b"secret").unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('storage_path', ?1)",
+            params![normalize_path(&emotes_dir)],
+        )
+        .unwrap();
+
+        assert!(resolve_emote_path_in_active_dir(&conn, &inside.to_string_lossy()).is_ok());
+        assert!(resolve_emote_path_in_active_dir(&conn, &outside.to_string_lossy()).is_err());
+
+        let _ = fs::remove_dir_all(&base);
     }
 }

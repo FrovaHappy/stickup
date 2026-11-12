@@ -171,11 +171,17 @@ export async function checkForUpdates(
  */
 export async function downloadAndInstallAsset(
   downloadUrl: string,
-  filename: string
+  filename: string,
+  options?: { expectedSha256?: string | null; checksumUrl?: string | null }
 ): Promise<string> {
   isDownloadingAsset.set(true);
   try {
-    const savedPath = await api.downloadUpdateAsset(downloadUrl, filename);
+    const savedPath = await api.downloadUpdateAsset(
+      downloadUrl,
+      filename,
+      options?.expectedSha256 ?? null,
+      options?.checksumUrl ?? null
+    );
     downloadedFilePath.set(savedPath);
     toast.success('Instalador descargado correctamente.');
     return savedPath;

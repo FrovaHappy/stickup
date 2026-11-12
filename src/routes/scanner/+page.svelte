@@ -24,7 +24,12 @@
   import { loadEmotes } from "$lib/stores/emotes";
   import { toast } from "$lib/stores/toast";
   import type { ScannedImage, ScannedImageImportRequest } from "$lib/types/scanner";
-  import { generateCollectorScript, generateBookmarklet, parseCollectorInput } from "$lib/utils/domCollector";
+  import {
+    generateCollectorScript,
+    generateBookmarklet,
+    parseCollectorInput,
+    isSafeHttpUrl,
+  } from "$lib/utils/domCollector";
 
   const GITHUB_COLLECTOR_FILE_URL = "https://github.com/FrovaHappy/stickup/blob/main/src/lib/utils/domCollector.ts";
 
@@ -864,15 +869,17 @@
                     <Copy size={14} />
                   </button>
 
-                  <a
-                    href={img.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="card-action-btn"
-                    title="Abrir imagen en navegador"
-                  >
-                    <ExternalLink size={14} />
-                  </a>
+                  {#if isSafeHttpUrl(img.url)}
+                    <a
+                      href={img.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="card-action-btn"
+                      title="Abrir imagen en navegador"
+                    >
+                      <ExternalLink size={14} />
+                    </a>
+                  {/if}
 
                   <button
                     type="button"

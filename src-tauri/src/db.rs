@@ -502,28 +502,52 @@ pub fn inspect_backup_file(path: &Path) -> Result<crate::models::BackupInfo, Str
     })
 }
 
+fn is_db_extension(path: &Path) -> bool {
+    path.extension()
+        .map(|ext| ext.eq_ignore_ascii_case("db") || ext.eq_ignore_ascii_case("sqlite"))
+        .unwrap_or(false)
+}
+
 pub fn create_backup_from_conn(
     conn: &Connection,
     target_path: &Path,
 ) -> Result<crate::models::BackupInfo, String> {
-    if let Some(parent) = target_path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("No se pudo crear el directorio de destino: {}", e))?;
-        }
+    if !is_db_extension(target_path) {
+        return Err("El archivo de copia de seguridad debe tener extensión .db o .sqlite".to_string());
     }
 
-    let norm_target = normalize_path(target_path);
+    let file_name = target_path
+        .file_name()
+        .ok_or_else(|| "Nombre de archivo de copia de seguridad inválido".to_string())?;
+    let parent = target_path
+        .parent()
+        .ok_or_else(|| "Directorio de destino inválido".to_string())?;
+    if !parent.exists() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("No se pudo crear el directorio de destino: {}", e))?;
+    }
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Directorio de destino inaccesible: {}", e))?;
+    let safe_target = canonical_parent.join(file_name);
 
-    if target_path.exists() {
-        fs::remove_file(target_path)
+    let norm_target = normalize_path(&safe_target);
+    if norm_target.to_ascii_lowercase().contains("src-tauri") {
+        return Err("No se permiten copias de seguridad dentro de src-tauri".to_string());
+    }
+
+    if let Ok(meta) = fs::symlink_metadata(&safe_target) {
+        if meta.file_type().is_symlink() {
+            return Err("No se permite sobrescribir un enlace simbólico".to_string());
+        }
+        fs::remove_file(&safe_target)
             .map_err(|e| format!("No se pudo sobrescribir el archivo de destino: {}", e))?;
     }
 
     conn.execute("VACUUM INTO ?1", params![norm_target])
         .map_err(|e| format!("Error al generar la copia de seguridad: {}", e))?;
 
-    inspect_backup_file(target_path)
+    inspect_backup_file(&safe_target)
 }
 
 pub fn create_db_backup(destination_file: Option<&Path>) -> Result<crate::models::BackupInfo, String> {
@@ -559,19 +583,12 @@ pub fn prune_backups_dir(backups_dir: &Path, max_allowed: usize) -> Result<usize
 
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.is_file() {
-            let is_db = p
-                .extension()
-                .map(|ext| ext.eq_ignore_ascii_case("db") || ext.eq_ignore_ascii_case("sqlite"))
-                .unwrap_or(false);
-
-            if is_db {
-                let mod_time = entry
-                    .metadata()
-                    .and_then(|m| m.modified())
-                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                files.push((p, mod_time));
-            }
+        if p.is_file() && is_db_extension(&p) {
+            let mod_time = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            files.push((p, mod_time));
         }
     }
 
@@ -590,28 +607,45 @@ pub fn prune_backups_dir(backups_dir: &Path, max_allowed: usize) -> Result<usize
     Ok(deleted_count)
 }
 
-pub fn delete_db_backup(backup_path: &Path) -> Result<bool, String> {
-    if !backup_path.exists() {
-        return Err(format!("El archivo no existe: {}", backup_path.display()));
+pub fn delete_db_backup_in_dir(backup_path: &Path, allowed_dir: &Path) -> Result<bool, String> {
+    if !is_db_extension(backup_path) {
+        return Err(
+            "Solo se pueden eliminar archivos de copia de seguridad (.db / .sqlite)".to_string(),
+        );
     }
 
-    if !backup_path.is_file() {
+    let meta = fs::symlink_metadata(backup_path)
+        .map_err(|_| format!("El archivo no existe: {}", backup_path.display()))?;
+    if meta.file_type().is_symlink() {
+        return Err("No se permite eliminar enlaces simbólicos".to_string());
+    }
+
+    let canonical_dir = allowed_dir
+        .canonicalize()
+        .map_err(|_| "La carpeta de copias de seguridad no existe".to_string())?;
+    let canonical_file = backup_path
+        .canonicalize()
+        .map_err(|_| format!("El archivo no existe: {}", backup_path.display()))?;
+
+    if !canonical_file.starts_with(&canonical_dir) {
+        return Err(
+            "Acceso denegado: la copia de seguridad está fuera del directorio autorizado"
+                .to_string(),
+        );
+    }
+
+    if !canonical_file.is_file() {
         return Err("La ruta especificada no es un archivo".to_string());
     }
 
-    let is_db = backup_path
-        .extension()
-        .map(|ext| ext.eq_ignore_ascii_case("db") || ext.eq_ignore_ascii_case("sqlite"))
-        .unwrap_or(false);
-
-    if !is_db {
-        return Err("Solo se pueden eliminar archivos de copia de seguridad (.db / .sqlite)".to_string());
-    }
-
-    fs::remove_file(backup_path)
+    fs::remove_file(&canonical_file)
         .map_err(|e| format!("No se pudo eliminar la copia de seguridad: {}", e))?;
 
     Ok(true)
+}
+
+pub fn delete_db_backup(backup_path: &Path) -> Result<bool, String> {
+    delete_db_backup_in_dir(backup_path, &get_backups_dir())
 }
 
 pub fn list_db_backups() -> Result<Vec<crate::models::BackupInfo>, String> {
@@ -626,16 +660,9 @@ pub fn list_db_backups() -> Result<Vec<crate::models::BackupInfo>, String> {
     let mut list = Vec::new();
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.is_file() {
-            let is_db = p
-                .extension()
-                .map(|ext| ext.eq_ignore_ascii_case("db") || ext.eq_ignore_ascii_case("sqlite"))
-                .unwrap_or(false);
-
-            if is_db {
-                if let Ok(info) = inspect_backup_file(&p) {
-                    list.push(info);
-                }
+        if p.is_file() && is_db_extension(&p) {
+            if let Ok(info) = inspect_backup_file(&p) {
+                list.push(info);
             }
         }
     }
@@ -645,7 +672,22 @@ pub fn list_db_backups() -> Result<Vec<crate::models::BackupInfo>, String> {
 }
 
 pub fn restore_db_backup(backup_path: &Path) -> Result<crate::models::RestoreResult, String> {
-    let backup_info = inspect_backup_file(backup_path)?;
+    if !is_db_extension(backup_path) {
+        return Err("Solo se pueden restaurar copias de seguridad (.db / .sqlite)".to_string());
+    }
+    let meta = fs::symlink_metadata(backup_path)
+        .map_err(|_| format!("El archivo de respaldo no existe: {}", backup_path.display()))?;
+    if meta.file_type().is_symlink() {
+        return Err("No se permite restaurar desde un enlace simbólico".to_string());
+    }
+    let canonical_backup = backup_path
+        .canonicalize()
+        .map_err(|_| format!("El archivo de respaldo no existe: {}", backup_path.display()))?;
+    if !canonical_backup.is_file() {
+        return Err("La ruta especificada no corresponde a un archivo".to_string());
+    }
+
+    let backup_info = inspect_backup_file(&canonical_backup)?;
 
     let active_db_dir = get_active_db_dir();
     let active_db = active_db_dir.join(DB_FILE_NAME);
@@ -665,7 +707,7 @@ pub fn restore_db_backup(backup_path: &Path) -> Result<crate::models::RestoreRes
         }
     }
 
-    fs::copy(backup_path, &active_db)
+    fs::copy(&canonical_backup, &active_db)
         .map_err(|e| format!("No se pudo restaurar el archivo de base de datos: {}", e))?;
 
     let conn = ensure_db()?;
@@ -942,24 +984,45 @@ mod tests {
 
     #[test]
     fn test_delete_db_backup() {
-        let tmp_dir = std::env::temp_dir().join(format!("test_delete_{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&tmp_dir).unwrap();
+        let base_dir = std::env::temp_dir().join(format!("test_delete_{}", uuid::Uuid::new_v4()));
+        let backups_dir = base_dir.join("backups");
+        let outside_dir = base_dir.join("outside");
+        fs::create_dir_all(&backups_dir).unwrap();
+        fs::create_dir_all(&outside_dir).unwrap();
 
-        let db_file = tmp_dir.join("sample.db");
+        let db_file = backups_dir.join("sample.db");
         fs::write(&db_file, "content").unwrap();
         assert!(db_file.exists());
 
-        let res = delete_db_backup(&db_file).unwrap();
+        let res = delete_db_backup_in_dir(&db_file, &backups_dir).unwrap();
         assert!(res);
         assert!(!db_file.exists());
 
         // Archivo que no es .db debe ser rechazado
-        let txt_file = tmp_dir.join("sample.txt");
+        let txt_file = backups_dir.join("sample.txt");
         fs::write(&txt_file, "content").unwrap();
-        assert!(delete_db_backup(&txt_file).is_err());
+        assert!(delete_db_backup_in_dir(&txt_file, &backups_dir).is_err());
         assert!(txt_file.exists());
 
-        let _ = fs::remove_dir_all(&tmp_dir);
+        // Archivo .db fuera del directorio de backups debe ser rechazado
+        let outside_db = outside_dir.join("secret.db");
+        fs::write(&outside_db, "content").unwrap();
+        let traversal = backups_dir.join("..").join("outside").join("secret.db");
+        assert!(delete_db_backup_in_dir(&outside_db, &backups_dir).is_err());
+        assert!(delete_db_backup_in_dir(&traversal, &backups_dir).is_err());
+        assert!(outside_db.exists());
+
+        let _ = fs::remove_dir_all(&base_dir);
+    }
+
+    #[test]
+    fn test_create_backup_from_conn_rejects_non_db_extension() {
+        let base_dir = std::env::temp_dir().join(format!("test_bkp_ext_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&base_dir).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        let bad_path = base_dir.join("notes.txt");
+        assert!(create_backup_from_conn(&conn, &bad_path).is_err());
+        let _ = fs::remove_dir_all(&base_dir);
     }
 
     #[test]

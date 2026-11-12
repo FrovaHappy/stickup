@@ -33,7 +33,11 @@
     try {
       const saved = await downloadAndInstallAsset(
         matchedAsset.browser_download_url,
-        matchedAsset.name
+        matchedAsset.name,
+        {
+          expectedSha256: matchedAsset.digest ?? null,
+          checksumUrl: info?.checksumUrl ?? null,
+        }
       );
       if (saved) {
         // Ejecutar inmediatamente tras descargar

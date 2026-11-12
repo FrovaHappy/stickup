@@ -19,11 +19,13 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost https: http: data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost asset: http://asset.localhost https://asset.localhost https://api.github.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "**"
+          "$DOCUMENT/emotes/**",
+          "$APPDATA/**",
+          "$LOCALAPPDATA/**"
         ]
       }
     }

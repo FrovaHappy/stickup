@@ -76,5 +76,44 @@ describe('domCollector utils', () => {
     expect(bookmarklet).not.toContain('%7B');
     expect(bookmarklet.length).toBeGreaterThan(50);
   });
+
+  it('rejects javascript:, vbscript:, file:, and SVG data URIs in JSON and text inputs', () => {
+    const jsonPayload = JSON.stringify({
+      source: 'javascript:alert(1)',
+      items: [
+        { url: 'javascript:alert(1)', alt: 'xss' },
+        { url: 'JaVaScRiPt:alert(2)', alt: 'xss2' },
+        { url: 'vbscript:msgbox(1)', alt: 'vbs' },
+        { url: 'data:image/svg+xml;base64,PHN2Zy8+', alt: 'svg' },
+        { url: 'file:///C:/Windows/win.ini', alt: 'file' },
+        { url: 'https://cdn.example.com/safe.png', alt: 'safe' },
+        { url: 'data:image/png;base64,iVBORw0KGgo=', alt: 'safe-data' }
+      ]
+    });
+
+    const jsonResult = parseCollectorInput(jsonPayload);
+    expect(jsonResult.source).toBeUndefined();
+    expect(jsonResult.items.map((i) => i.url)).toEqual([
+      'https://cdn.example.com/safe.png',
+      'data:image/png;base64,iVBORw0KGgo='
+    ]);
+
+    const arrayPayload = JSON.stringify([
+      'javascript:alert(1)',
+      'https://cdn.example.com/good.webp'
+    ]);
+    expect(parseCollectorInput(arrayPayload).items.map((i) => i.url)).toEqual([
+      'https://cdn.example.com/good.webp'
+    ]);
+
+    const linePayload = [
+      'data:image/svg+xml;base64,PHN2Zz8+',
+      'https://cdn.example.com/valid.gif',
+      'javascript:alert(1)'
+    ].join('\n');
+    expect(parseCollectorInput(linePayload).items.map((i) => i.url)).toEqual([
+      'https://cdn.example.com/valid.gif'
+    ]);
+  });
 });
 

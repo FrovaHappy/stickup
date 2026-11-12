@@ -1,11 +1,17 @@
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 pub const MIN_VALID_MODEL_SIZE: u64 = 15_000_000; // Al menos 15MB para considerar el archivo íntegro
+pub const MAX_VALID_MODEL_SIZE: u64 = 500 * 1024 * 1024; // Máximo 500MB para evitar descargas desbordadas
+
+pub fn validate_huggingface_model_url(raw: &str) -> Result<(), String> {
+    let parsed = crate::services::net::validate_public_http_url_syntax(raw)?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("huggingface.co") {
+        return Err("La descarga del modelo solo se permite desde https://huggingface.co/".to_string());
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelPresetInfo {
@@ -161,6 +167,8 @@ where
     let preset = find_preset(model_id)
         .ok_or_else(|| format!("Preset de modelo no reconocido: {}", model_id))?;
 
+    validate_huggingface_model_url(preset.download_url)?;
+
     if !base_dir.exists() {
         fs::create_dir_all(base_dir)
             .map_err(|e| format!("No se pudo crear el directorio de modelos: {}", e))?;
@@ -169,97 +177,65 @@ where
     let target_path = base_dir.join(preset.filename);
     let tmp_path = base_dir.join(format!("{}.tmp", preset.filename));
 
-    if tmp_path.exists() {
-        let _ = fs::remove_file(&tmp_path);
-    }
-
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(900)) // 15 min para conexiones lentas
-        .build()
-        .map_err(|e| format!("Error al crear cliente HTTP: {}", e))?;
-
-    let response = client.get(preset.download_url).send().await.map_err(|e| {
-        if e.is_connect() || e.is_timeout() {
-            "No se pudo conectar con el servidor de Hugging Face. Verifica tu conexión a internet.".to_string()
+    let (response, header_sha256) = crate::services::net::send_get_tracked(
+        preset.download_url,
+        900,
+        None,
+        true,
+    )
+    .await
+    .map_err(|e| {
+        if e.contains("timed out") || e.contains("connect") {
+            "No se pudo conectar con el servidor de Hugging Face. Verifica tu conexión a internet."
+                .to_string()
         } else {
-            format!("Error de conexión con el servidor de modelos: {}", e)
+            e
         }
     })?;
 
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!(
-            "El servidor de Hugging Face devolvió un error ({}: {}). Por favor, intenta de nuevo más tarde.",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("No disponible")
-        ));
+    if let Some(ct) = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+    {
+        let lower_ct = ct.to_ascii_lowercase();
+        if lower_ct.starts_with("text/") || lower_ct.contains("application/json") {
+            return Err("El servidor devolvió contenido HTML/texto inesperado en lugar del modelo ONNX".to_string());
+        }
     }
 
-    let total_bytes = response.content_length();
-    let mut downloaded_bytes: u64 = 0;
-
-    let mut file = File::create(&tmp_path)
-        .map_err(|e| format!("No se pudo crear el archivo temporal de descarga: {}", e))?;
-
-    let mut stream = response.bytes_stream();
-
-    while let Some(chunk_res) = stream.next().await {
-        let chunk = chunk_res.map_err(|e| {
-            let _ = fs::remove_file(&tmp_path);
-            format!("Error durante la descarga de datos del modelo: {}", e)
-        })?;
-
-        file.write_all(&chunk).map_err(|e| {
-            let _ = fs::remove_file(&tmp_path);
-            format!("Error al escribir en disco durante la descarga: {}", e)
-        })?;
-
-        downloaded_bytes += chunk.len() as u64;
-
-        let percentage = if let Some(total) = total_bytes {
-            if total > 0 {
-                ((downloaded_bytes as f64 / total as f64) * 100.0) as f32
+    crate::services::net::stream_response_to_file_verified(
+        response,
+        &tmp_path,
+        &target_path,
+        MIN_VALID_MODEL_SIZE,
+        MAX_VALID_MODEL_SIZE,
+        header_sha256.as_deref(),
+        |downloaded_bytes, total_bytes| {
+            let percentage = if let Some(total) = total_bytes {
+                if total > 0 {
+                    ((downloaded_bytes as f64 / total as f64) * 100.0) as f32
+                } else {
+                    0.0
+                }
             } else {
                 0.0
-            }
-        } else {
-            0.0
-        };
+            };
 
-        on_progress(DownloadProgress {
-            downloaded_bytes,
-            total_bytes,
-            percentage,
-            done: false,
-        });
-    }
+            on_progress(DownloadProgress {
+                downloaded_bytes,
+                total_bytes,
+                percentage,
+                done: false,
+            });
+        },
+    )
+    .await?;
 
-    file.flush()
-        .map_err(|e| format!("Error al sincronizar archivo en disco: {}", e))?;
-    drop(file);
-
-    // Validar tamaño mínimo para evitar archivos incompletos
-    let meta = fs::metadata(&tmp_path)
-        .map_err(|e| format!("No se pudo leer metadatos del archivo descargado: {}", e))?;
-    if meta.len() < MIN_VALID_MODEL_SIZE {
-        let _ = fs::remove_file(&tmp_path);
-        return Err(format!(
-            "El archivo descargado está incompleto o corrupto (tamaño: {} bytes).",
-            meta.len()
-        ));
-    }
-
-    // Renombrado atómico
-    if target_path.exists() {
-        let _ = fs::remove_file(&target_path);
-    }
-    fs::rename(&tmp_path, &target_path)
-        .map_err(|e| format!("No se pudo finalizar la instalación del modelo: {}", e))?;
-
+    let final_bytes = fs::metadata(&target_path).map(|m| m.len()).unwrap_or(0);
     on_progress(DownloadProgress {
-        downloaded_bytes,
-        total_bytes: Some(downloaded_bytes),
+        downloaded_bytes: final_bytes,
+        total_bytes: Some(final_bytes),
         percentage: 100.0,
         done: true,
     });
@@ -323,5 +299,18 @@ mod tests {
         assert!(!status_after.is_downloaded);
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_validate_huggingface_model_url_presets() {
+        for preset in AVAILABLE_PRESETS {
+            assert!(
+                validate_huggingface_model_url(preset.download_url).is_ok(),
+                "Preset URL must pass validation: {}",
+                preset.download_url
+            );
+        }
+        assert!(validate_huggingface_model_url("http://huggingface.co/model.onnx").is_err());
+        assert!(validate_huggingface_model_url("https://evil.com/model.onnx").is_err());
     }
 }

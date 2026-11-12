@@ -4,6 +4,7 @@ export interface ReleaseAsset {
   browser_download_url: string;
   size: number;
   content_type: string;
+  digest?: string | null;
 }
 
 export interface GitHubRelease {
@@ -35,6 +36,7 @@ export interface UpdateCheckResult {
   isHot: boolean;
   hoursSincePublished: number;
   matchedAsset: ReleaseAsset | null;
+  checksumUrl?: string | null;
 }
 
 export interface UpdatePreferences {

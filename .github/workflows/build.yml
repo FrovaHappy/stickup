@@ -166,6 +166,10 @@ jobs:
           cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe release-assets/installers/
           cp src-tauri/target/release/stickup release-assets/binaries/stickup-linux-x64
           cp src-tauri/target/x86_64-pc-windows-msvc/release/stickup.exe release-assets/binaries/stickup-windows-x64.exe
+          (
+            cd release-assets
+            sha256sum installers/* binaries/* | sed 's|installers/||; s|binaries/||' > SHA256SUMS.txt
+          )
 
       - name: Push commit and tag
         run: git push origin HEAD "${{ steps.version.outputs.tag }}"
@@ -188,6 +192,7 @@ jobs:
             release-assets/installers/* \
             release-assets/binaries/stickup-linux-x64 \
             release-assets/binaries/stickup-windows-x64.exe \
+            release-assets/SHA256SUMS.txt \
             $EXTRA_ARGS \
             --title "${{ steps.version.outputs.tag }}" \
             $NOTES_ARGS
