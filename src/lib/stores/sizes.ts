@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import type { SizePreset } from '$lib/types/emote';
+import { fitDimensions } from '$lib/utils/format';
 
 export const CUSTOM_SIZES_STORAGE_KEY = 'stickup_custom_sizes';
 export const DEFAULT_RESOLUTION_STORAGE_KEY = 'stickup_pref_default_resolution';
@@ -141,25 +142,38 @@ export function resolveDefaultDimensions(
   }
   const all = [...DEFAULT_SIZE_PRESETS, ...customList];
   const found = all.find((p) => p.value === defaultRes);
+  let boundW = emote.original_width;
+  let boundH = emote.original_height;
+  let label = 'Original';
+
   if (found && typeof found.width === 'number') {
-    return {
-      width: found.width,
-      height: found.height ?? found.width,
-      label: found.label
-    };
-  }
-  const match = defaultRes.match(/^(?:custom_)?(\d+)x(\d+)$/i);
-  if (match) {
-    const w = parseInt(match[1], 10);
-    const h = parseInt(match[2], 10);
-    if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
-      return { width: w, height: h, label: `${w}×${h}` };
+    boundW = found.width;
+    boundH = found.height ?? found.width;
+    label = found.label;
+  } else {
+    const match = defaultRes.match(/^(?:custom_)?(\d+)x(\d+)$/i);
+    if (match) {
+      const w = parseInt(match[1], 10);
+      const h = parseInt(match[2], 10);
+      if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
+        boundW = w;
+        boundH = h;
+        label = `${w}×${h}`;
+      }
+    } else {
+      return {
+        width: emote.original_width,
+        height: emote.original_height,
+        label: 'Original'
+      };
     }
   }
+
+  const fitted = fitDimensions(emote.original_width, emote.original_height, boundW, boundH);
   return {
-    width: emote.original_width,
-    height: emote.original_height,
-    label: 'Original'
+    width: fitted.width,
+    height: fitted.height,
+    label
   };
 }
 

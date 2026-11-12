@@ -4,6 +4,7 @@ import {
   getAvailableFormats,
   getMimeType,
   formatFileSize,
+  fitDimensions,
   resolveDimensions,
   toPascalCase,
   formatSearchQueryInput,
@@ -51,21 +52,47 @@ describe('format utilities', () => {
     expect(formatFileSize(2 * 1024 * 1024)).toBe('2.0 MB');
   });
 
-  it('resolves dimensions for original and preset sizes', () => {
-    expect(resolveDimensions(null, 'original')).toEqual({ width: 48, height: 48 });
-    expect(resolveDimensions(baseEmote, 'original')).toEqual({ width: 300, height: 200 });
-    expect(resolveDimensions(baseEmote, '128')).toEqual({ width: 128, height: 128 });
-    expect(resolveDimensions(baseEmote, 'unknown')).toEqual({ width: 300, height: 200 });
+  it('calculates proportional dimensions preserving aspect ratio with fitDimensions', () => {
+    // Landscape (300x200) inside 128x128
+    expect(fitDimensions(300, 200, 128, 128)).toEqual({ width: 128, height: 85 });
+    // Portrait (200x300) inside 128x128
+    expect(fitDimensions(200, 300, 128, 128)).toEqual({ width: 85, height: 128 });
+    // Square (200x200) inside 128x128
+    expect(fitDimensions(200, 200, 128, 128)).toEqual({ width: 128, height: 128 });
+    // Custom rectangle bound (300x200) inside 200x100
+    expect(fitDimensions(300, 200, 200, 100)).toEqual({ width: 150, height: 100 });
+    // Edge cases
+    expect(fitDimensions(0, 0, 128, 128)).toEqual({ width: 128, height: 128 });
+    expect(fitDimensions(300, 200, 0, 0)).toEqual({ width: 300, height: 200 });
   });
 
-  it('resolves dimensions for custom sizes and extra presets', () => {
-    expect(resolveDimensions(baseEmote, 'custom_96x96')).toEqual({ width: 96, height: 96 });
-    expect(resolveDimensions(baseEmote, '32x32')).toEqual({ width: 32, height: 32 });
+  it('resolves dimensions preserving aspect ratio for presets and custom sizes', () => {
+    expect(resolveDimensions(null, 'original')).toEqual({ width: 48, height: 48 });
+    expect(resolveDimensions(baseEmote, 'original')).toEqual({ width: 300, height: 200 });
+    // Landscape baseEmote (300x200) inside 128x128 bounding box => 128x85
+    expect(resolveDimensions(baseEmote, '128')).toEqual({ width: 128, height: 85 });
+    expect(resolveDimensions(baseEmote, 'unknown')).toEqual({ width: 300, height: 200 });
+
+    // Square emote inside 128x128 => 128x128
+    const squareEmote = { ...baseEmote, original_width: 256, original_height: 256 };
+    expect(resolveDimensions(squareEmote, '128')).toEqual({ width: 128, height: 128 });
+
+    // Portrait emote inside 128x128 => 85x128
+    const portraitEmote = { ...baseEmote, original_width: 200, original_height: 300 };
+    expect(resolveDimensions(portraitEmote, '128')).toEqual({ width: 85, height: 128 });
+  });
+
+  it('resolves dimensions preserving aspect ratio for custom sizes and extra presets', () => {
+    // Landscape baseEmote (300x200) in custom_96x96 => 96x64
+    expect(resolveDimensions(baseEmote, 'custom_96x96')).toEqual({ width: 96, height: 64 });
+    // Landscape baseEmote (300x200) in 32x32 => 32x21
+    expect(resolveDimensions(baseEmote, '32x32')).toEqual({ width: 32, height: 21 });
+    // Landscape baseEmote (300x200) in 110x110 => 110x73
     expect(
       resolveDimensions(baseEmote, 'my_special', [
         { label: 'Special', value: 'my_special', width: 110, height: 110 }
       ])
-    ).toEqual({ width: 110, height: 110 });
+    ).toEqual({ width: 110, height: 73 });
   });
 
   describe('toPascalCase', () => {

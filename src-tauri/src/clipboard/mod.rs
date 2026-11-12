@@ -44,6 +44,19 @@ pub fn read_clipboard_payload() -> Result<ClipboardPayload, String> {
     }
 }
 
+pub fn fit_dimensions(orig_w: u32, orig_h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
+    if orig_w == 0 || orig_h == 0 {
+        return (max_w.max(1), max_h.max(1));
+    }
+    if max_w == 0 || max_h == 0 {
+        return (orig_w.max(1), orig_h.max(1));
+    }
+    let ratio = (max_w as f64 / orig_w as f64).min(max_h as f64 / orig_h as f64);
+    let new_w = ((orig_w as f64 * ratio).round() as u32).max(1);
+    let new_h = ((orig_h as f64 * ratio).round() as u32).max(1);
+    (new_w, new_h)
+}
+
 pub fn copy_emote(
     path: &str,
     format: &str,
@@ -63,8 +76,19 @@ pub fn copy_emote(
     let req_format = format.to_lowercase();
     let needs_resize = target_width > 0 && target_height > 0;
     let is_animated_gif = orig_ext == "gif" && req_format == "gif";
-    let is_same_dimensions = if let Ok((w, h)) = image::image_dimensions(p) {
-        w == target_width && h == target_height
+    let orig_dims = image::image_dimensions(p).ok();
+    let (target_w, target_h) = if needs_resize {
+        if let Some((ow, oh)) = orig_dims {
+            fit_dimensions(ow, oh, target_width, target_height)
+        } else {
+            (target_width, target_height)
+        }
+    } else {
+        (target_width, target_height)
+    };
+
+    let is_same_dimensions = if let Some((w, h)) = orig_dims {
+        w == target_w && h == target_h
     } else {
         false
     };
@@ -92,15 +116,21 @@ pub fn copy_emote(
         for frame in frames {
             let delay = frame.delay();
             let img = image::DynamicImage::ImageRgba8(frame.into_buffer());
-            let resized =
-                image::imageops::resize(&img, target_width, target_height, FilterType::Lanczos3);
+            let (frame_target_w, frame_target_h) =
+                fit_dimensions(img.width(), img.height(), target_width, target_height);
+            let resized = image::imageops::resize(
+                &img,
+                frame_target_w,
+                frame_target_h,
+                FilterType::Lanczos3,
+            );
             resized_frames.push(Frame::from_parts(resized, 0, 0, delay));
         }
 
         let temp_dir = std::env::temp_dir().join("stickup_clipboard");
         let _ = fs::create_dir_all(&temp_dir);
         let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("emote");
-        let temp_file = temp_dir.join(format!("{}_{}x{}.gif", stem, target_width, target_height));
+        let temp_file = temp_dir.join(format!("{}_{}x{}.gif", stem, target_w, target_h));
 
         let out_file = fs::File::create(&temp_file).map_err(|e| e.to_string())?;
         let mut encoder = GifEncoder::new(out_file);
@@ -129,10 +159,15 @@ pub fn copy_emote(
         final_format = "gif".to_string();
     } else {
         let img = image::open(p).map_err(|e| format!("Error cargando imagen: {}", e))?;
+        let (fitted_w, fitted_h) = if needs_resize {
+            fit_dimensions(img.width(), img.height(), target_width, target_height)
+        } else {
+            (img.width(), img.height())
+        };
         let processed = if needs_resize
-            && (img.width() != target_width || img.height() != target_height)
+            && (img.width() != fitted_w || img.height() != fitted_h)
         {
-            image::imageops::resize(&img, target_width, target_height, FilterType::Lanczos3)
+            image::imageops::resize(&img, fitted_w, fitted_h, FilterType::Lanczos3)
         } else {
             img.to_rgba8()
         };
@@ -208,6 +243,48 @@ pub fn copy_emote(
     #[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
     {
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fit_dimensions_landscape() {
+        // 300x200 inside 128x128 bounding box => aspect ratio 1.5, fits to 128x85
+        let (w, h) = fit_dimensions(300, 200, 128, 128);
+        assert_eq!(w, 128);
+        assert_eq!(h, 85);
+    }
+
+    #[test]
+    fn test_fit_dimensions_portrait() {
+        // 200x300 inside 128x128 bounding box => fits to 85x128
+        let (w, h) = fit_dimensions(200, 300, 128, 128);
+        assert_eq!(w, 85);
+        assert_eq!(h, 128);
+    }
+
+    #[test]
+    fn test_fit_dimensions_square() {
+        let (w, h) = fit_dimensions(256, 256, 128, 128);
+        assert_eq!(w, 128);
+        assert_eq!(h, 128);
+    }
+
+    #[test]
+    fn test_fit_dimensions_custom_rectangle() {
+        // 300x200 inside 200x100
+        let (w, h) = fit_dimensions(300, 200, 200, 100);
+        assert_eq!(w, 150);
+        assert_eq!(h, 100);
+    }
+
+    #[test]
+    fn test_fit_dimensions_zero_handling() {
+        assert_eq!(fit_dimensions(0, 0, 128, 128), (128, 128));
+        assert_eq!(fit_dimensions(300, 200, 0, 0), (300, 200));
     }
 }
 

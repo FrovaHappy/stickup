@@ -37,6 +37,34 @@ export function getMimeType(format: string): string {
   }
 }
 
+export function fitDimensions(
+  origWidth: number,
+  origHeight: number,
+  maxWidth: number,
+  maxHeight: number
+): { width: number; height: number } {
+  const origW = Math.round(origWidth);
+  const origH = Math.round(origHeight);
+  const maxW = Math.round(maxWidth);
+  const maxH = Math.round(maxHeight);
+
+  if (origW <= 0 || origH <= 0) {
+    return {
+      width: Math.max(1, maxW > 0 ? maxW : 48),
+      height: Math.max(1, maxH > 0 ? maxH : 48)
+    };
+  }
+  if (maxW <= 0 || maxH <= 0) {
+    return { width: Math.max(1, origW), height: Math.max(1, origH) };
+  }
+
+  const ratio = Math.min(maxW / origW, maxH / origH);
+  return {
+    width: Math.max(1, Math.round(origW * ratio)),
+    height: Math.max(1, Math.round(origH * ratio))
+  };
+}
+
 export async function renderEmoteToCanvas(
   path: string,
   width: number,
@@ -54,12 +82,16 @@ export async function renderEmoteToCanvas(
     }
   });
 
+  const origW = img.naturalWidth || img.width || width;
+  const origH = img.naturalHeight || img.height || height;
+  const fitted = fitDimensions(origW, origH, width, height);
+
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = fitted.width;
+  canvas.height = fitted.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('No se pudo inicializar canvas');
-  ctx.drawImage(img, 0, 0, width, height);
+  ctx.drawImage(img, 0, 0, fitted.width, fitted.height);
   return canvas;
 }
 
@@ -81,18 +113,27 @@ export function resolveDimensions(
   }
   const allPresets = extraPresets ? [...SIZE_PRESETS, ...extraPresets] : SIZE_PRESETS;
   const preset = allPresets.find((p) => p.value === selectedSize);
+  let boundW = emote.original_width;
+  let boundH = emote.original_height;
+
   if (preset && typeof preset.width === 'number') {
-    return { width: preset.width, height: preset.height ?? preset.width };
-  }
-  const match = selectedSize.match(/^(?:custom_)?(\d+)x(\d+)$/i);
-  if (match) {
-    const w = parseInt(match[1], 10);
-    const h = parseInt(match[2], 10);
-    if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
-      return { width: w, height: h };
+    boundW = preset.width;
+    boundH = preset.height ?? preset.width;
+  } else {
+    const match = selectedSize.match(/^(?:custom_)?(\d+)x(\d+)$/i);
+    if (match) {
+      const w = parseInt(match[1], 10);
+      const h = parseInt(match[2], 10);
+      if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) {
+        boundW = w;
+        boundH = h;
+      }
+    } else {
+      return { width: emote.original_width, height: emote.original_height };
     }
   }
-  return { width: emote.original_width, height: emote.original_height };
+
+  return fitDimensions(emote.original_width, emote.original_height, boundW, boundH);
 }
 
 /**

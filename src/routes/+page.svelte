@@ -18,7 +18,7 @@
     formatFilter,
     filterEmotesByFormat
   } from '$lib/stores/preferences';
-  import { toPascalCase, isAnimatedEmote } from '$lib/utils/format';
+  import { toPascalCase, isAnimatedEmote, fitDimensions } from '$lib/utils/format';
 
   let selected: Emote | null = null;
   let emoteToDelete: Emote | null = null;
@@ -86,12 +86,18 @@
       await new Promise((r) => setTimeout(r, 20));
     }
     try {
+      const fitted = fitDimensions(
+        emote.original_width,
+        emote.original_height,
+        width,
+        height
+      );
       await api.copyToClipboard(
         emote.id,
         emote.path,
         emote.format,
-        width,
-        height
+        fitted.width,
+        fitted.height
       );
       if (resizingToastId) {
         toast.dismiss(resizingToastId);

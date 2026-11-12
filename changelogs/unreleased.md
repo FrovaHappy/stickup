@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Preservada la relación de aspecto al redimensionar imágenes tanto en el backend como en el frontend evitando deformaciones.
 - Corregido el bloqueo indefinido ("Procesando...") al pegar o añadir URLs permitiendo que el cliente HTTP use el enrutamiento del sistema (WARP/VPN) y garantizando el reinicio de `isBusy`.
 - Corregido el fallo al pegar URLs de emotes de Discord vía atajo de teclado permitiendo que `inspect_clipboard` procese e inspeccione URLs de imagen.
 - Retroalimentación visual prominente y corrección de eventos de clic al seleccionar tags en la barra horizontal.
