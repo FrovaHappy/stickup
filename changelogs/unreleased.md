@@ -12,6 +12,7 @@
 
 - Retroalimentación visual prominente y corrección de eventos de clic al seleccionar tags en la barra horizontal.
 - Eliminado remanente de aviso viejo tipo píldora en el modal de detalle del emote.
+- Bloqueo inmediato del botón de instalación y prevención de doble apertura del instalador al actualizar.
 
 ### Security
 

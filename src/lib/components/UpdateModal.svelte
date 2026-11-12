@@ -14,6 +14,8 @@
     availableUpdate,
     updateModalOpen,
     isDownloadingAsset,
+    isLaunchingInstaller,
+    hasLaunchedInstaller,
     downloadedFilePath,
     closeUpdateModal,
     downloadAndInstallAsset,
@@ -28,8 +30,14 @@
   $: isHot = info?.isHot ?? false;
   $: hours = info?.hoursSincePublished ?? 0;
 
+  let isActionBlocked = false;
+
+  $: isBusy = $isDownloadingAsset || $isLaunchingInstaller || isActionBlocked;
+  $: isButtonDisabled = !matchedAsset || isBusy || $hasLaunchedInstaller;
+
   async function handleDownloadInApp() {
-    if (!matchedAsset) return;
+    if (!matchedAsset || isButtonDisabled) return;
+    isActionBlocked = true;
     try {
       const saved = await downloadAndInstallAsset(
         matchedAsset.browser_download_url,
@@ -41,16 +49,35 @@
       );
       if (saved) {
         // Ejecutar inmediatamente tras descargar
-        await launchDownloadedInstaller(saved);
+        const launched = await launchDownloadedInstaller(saved);
+        if (launched) {
+          setTimeout(() => {
+            closeUpdateModal();
+          }, 1500);
+        }
+      } else {
+        isActionBlocked = false;
       }
     } catch {
+      isActionBlocked = false;
       // Error manejado en el store con toast
     }
   }
 
   async function handleLaunchInstalled() {
-    if ($downloadedFilePath) {
-      await launchDownloadedInstaller($downloadedFilePath);
+    if (!$downloadedFilePath || isButtonDisabled) return;
+    isActionBlocked = true;
+    try {
+      const launched = await launchDownloadedInstaller($downloadedFilePath);
+      if (launched) {
+        setTimeout(() => {
+          closeUpdateModal();
+        }, 1500);
+      } else {
+        isActionBlocked = false;
+      }
+    } catch {
+      isActionBlocked = false;
     }
   }
 
@@ -147,26 +174,28 @@
           {#if $downloadedFilePath}
             <div class="downloaded-action">
               <span class="downloaded-success">
-                <CheckCircle2 size={16} /> Descargado
+                <CheckCircle2 size={16} /> {$hasLaunchedInstaller ? 'Instalador iniciado' : 'Descargado'}
               </span>
               <Button
                 variant="primary"
                 size="sm"
+                loading={$isLaunchingInstaller}
+                disabled={isButtonDisabled}
                 on:click={handleLaunchInstalled}
               >
-                <Play size={14} /> Ejecutar instalador
+                <Play size={14} /> {$hasLaunchedInstaller ? 'Instalador abierto' : $isLaunchingInstaller ? 'Iniciando...' : 'Ejecutar instalador'}
               </Button>
             </div>
           {:else}
             <Button
               variant="primary"
               size="sm"
-              loading={$isDownloadingAsset}
-              disabled={!matchedAsset || $isDownloadingAsset}
+              loading={isBusy}
+              disabled={isButtonDisabled}
               on:click={handleDownloadInApp}
             >
               <Download size={14} />
-              {$isDownloadingAsset ? 'Descargando...' : 'Descargar e instalar'}
+              {$isDownloadingAsset ? 'Descargando...' : $isLaunchingInstaller ? 'Iniciando...' : isActionBlocked ? 'Instalando...' : 'Descargar e instalar'}
             </Button>
           {/if}
         </div>
@@ -188,6 +217,7 @@
               <Button
                 variant="secondary"
                 size="sm"
+                disabled={isBusy}
                 on:click={handleDirectAssetDownloadBrowser}
               >
                 <Download size={14} /> Descargar archivo
@@ -196,6 +226,7 @@
             <Button
               variant="outline"
               size="sm"
+              disabled={isBusy}
               on:click={handleOpenBrowser}
             >
               <ExternalLink size={14} /> Ver en GitHub
@@ -210,6 +241,7 @@
     <Button
       variant="ghost"
       size="sm"
+      disabled={$isDownloadingAsset}
       on:click={closeUpdateModal}
     >
       Recordar más tarde

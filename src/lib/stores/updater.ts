@@ -49,6 +49,8 @@ export const availableUpdate = writable<UpdateCheckResult | null>(null);
 export const updateModalOpen = writable<boolean>(false);
 
 export const isDownloadingAsset = writable<boolean>(false);
+export const isLaunchingInstaller = writable<boolean>(false);
+export const hasLaunchedInstaller = writable<boolean>(false);
 export const downloadedFilePath = writable<string | null>(null);
 
 export async function loadCurrentAppVersion(): Promise<string> {
@@ -103,6 +105,7 @@ export function openUpdateModal() {
 
 export function closeUpdateModal() {
   updateModalOpen.set(false);
+  isLaunchingInstaller.set(false);
 }
 
 export async function checkForUpdates(
@@ -174,6 +177,9 @@ export async function downloadAndInstallAsset(
   filename: string,
   options?: { expectedSha256?: string | null; checksumUrl?: string | null }
 ): Promise<string> {
+  if (get(isDownloadingAsset) || get(isLaunchingInstaller)) {
+    return '';
+  }
   isDownloadingAsset.set(true);
   try {
     const savedPath = await api.downloadUpdateAsset(
@@ -197,12 +203,21 @@ export async function downloadAndInstallAsset(
 /**
  * Abre el instalador descargado en disco para actualizar la app.
  */
-export async function launchDownloadedInstaller(filePath: string): Promise<void> {
+export async function launchDownloadedInstaller(filePath: string): Promise<boolean> {
+  if (get(isLaunchingInstaller) || get(hasLaunchedInstaller)) {
+    return false;
+  }
+  isLaunchingInstaller.set(true);
   try {
     await api.launchInstaller(filePath);
+    hasLaunchedInstaller.set(true);
+    return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     toast.error(`No se pudo iniciar el instalador: ${msg}`);
+    return false;
+  } finally {
+    isLaunchingInstaller.set(false);
   }
 }
 

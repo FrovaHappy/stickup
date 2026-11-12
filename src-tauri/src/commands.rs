@@ -22,6 +22,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 static CLIPBOARD_LOCK: Mutex<Option<Instant>> = Mutex::new(None);
 static VERIFIED_INSTALLERS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+static INSTALLER_LAUNCH_LOCK: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn verified_installers() -> &'static Mutex<HashSet<PathBuf>> {
     VERIFIED_INSTALLERS.get_or_init(|| Mutex::new(HashSet::new()))
@@ -2261,11 +2262,31 @@ pub async fn download_update_asset(
 
 #[tauri::command]
 pub fn launch_installer(file_path: String) -> Result<(), String> {
+    {
+        let mut lock = INSTALLER_LAUNCH_LOCK.lock().map_err(|e| e.to_string())?;
+        let now = Instant::now();
+        if let Some(prev) = *lock {
+            if now.duration_since(prev).as_secs() < 5 {
+                // Ya se inició el instalador hace menos de 5 segundos; ignorar invocación duplicada
+                return Ok(());
+            }
+        }
+        *lock = Some(now);
+    }
+
     let downloads_dir = get_downloads_dir();
     let verified = verified_installers()
         .lock()
         .map_err(|_| "Estado de instaladores bloqueado".to_string())?;
-    let safe_path = validate_installer_launch_path(&file_path, &downloads_dir, &verified)?;
+    let safe_path = match validate_installer_launch_path(&file_path, &downloads_dir, &verified) {
+        Ok(p) => p,
+        Err(e) => {
+            if let Ok(mut lock) = INSTALLER_LAUNCH_LOCK.lock() {
+                *lock = None;
+            }
+            return Err(e);
+        }
+    };
     drop(verified);
 
     let safe_path_str = safe_path.to_string_lossy().to_string();
@@ -3182,5 +3203,20 @@ mod tests {
         assert!(resolve_emote_path_in_active_dir(&conn, &outside.to_string_lossy()).is_err());
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_installer_launch_debounce_ignores_rapid_calls() {
+        let mut lock = INSTALLER_LAUNCH_LOCK.lock().unwrap();
+        *lock = Some(Instant::now());
+        drop(lock);
+
+        // Una llamada inmediata posterior debe ser descartada sin error
+        let res = launch_installer("C:/some/path/installer.exe".to_string());
+        assert!(res.is_ok());
+
+        // Limpiar el lock después del test
+        let mut lock = INSTALLER_LAUNCH_LOCK.lock().unwrap();
+        *lock = None;
     }
 }

@@ -7,6 +7,12 @@ import {
   isCheckingUpdates,
   availableUpdate,
   updateModalOpen,
+  isDownloadingAsset,
+  isLaunchingInstaller,
+  hasLaunchedInstaller,
+  downloadedFilePath,
+  downloadAndInstallAsset,
+  launchDownloadedInstaller,
   setAutoCheck,
   setIncludePrereleases,
   setPreferredModal,
@@ -46,6 +52,10 @@ describe('Updater Store', () => {
     isCheckingUpdates.set(false);
     availableUpdate.set(null);
     updateModalOpen.set(false);
+    isDownloadingAsset.set(false);
+    isLaunchingInstaller.set(false);
+    hasLaunchedInstaller.set(false);
+    downloadedFilePath.set(null);
   });
 
   it('updates preferences and persists to localStorage', () => {
@@ -111,5 +121,16 @@ describe('Updater Store', () => {
     await checkForUpdates(true, mockFetcher, '0.2.0');
 
     expect(mockFetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('prevents multiple simultaneous calls to launchDownloadedInstaller', async () => {
+    isLaunchingInstaller.set(true);
+    const result = await launchDownloadedInstaller('C:/dummy/path.exe');
+    expect(result).toBe(false);
+
+    isLaunchingInstaller.set(false);
+    hasLaunchedInstaller.set(true);
+    const result2 = await launchDownloadedInstaller('C:/dummy/path.exe');
+    expect(result2).toBe(false);
   });
 });
