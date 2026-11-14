@@ -212,7 +212,12 @@ pub fn run() {
             commands::unload_bg_model_session,
             commands::is_bg_model_loaded_in_ram,
             commands::preview_remove_background,
-            commands::apply_remove_background
+            commands::apply_remove_background,
+            commands::get_cloud_sync_config,
+            commands::save_cloud_sync_config,
+            commands::get_cloud_sync_status,
+            commands::detect_cloud_folders,
+            commands::start_cloud_sync
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

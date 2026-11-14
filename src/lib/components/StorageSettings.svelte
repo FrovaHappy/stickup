@@ -16,6 +16,7 @@
   import { toast } from '$lib/stores/toast';
   import { formatFileSize } from '$lib/utils/format';
   import { Badge, Button, Modal, Toast } from '$lib/components/system-ui';
+  import CloudSyncSettings from '$lib/components/CloudSyncSettings.svelte';
   import type { BackupInfo } from '$lib/types/backup';
 
   let storagePath = '';
@@ -249,6 +250,9 @@
       {/if}
     </div>
   </div>
+
+  <!-- Sincronización en la Nube (Cloud Sync) -->
+  <CloudSyncSettings />
 
   <!-- Mensajes de estado -->
   {#if isBusy}

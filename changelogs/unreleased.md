@@ -2,6 +2,8 @@
 
 ### Added
 - Botón y comando nativo `open_storage_directory` para abrir la carpeta de recursos directamente en el explorador del sistema.
+- Sistema de sincronización en la nube (Cloud Sync) offline-first compatible con MEGA, Google Drive, OneDrive y carpetas sincronizadas.
+- Componente de ajustes `CloudSyncSettings` con detección automática de carpetas locales de nube y resolución LWW de conflictos.
 
 ### Changed
 - Almacenamiento centralizado y fijo en `%APPDATA%\stickup\resources` (o equivalente del sistema) con migración automática de datos heredados.

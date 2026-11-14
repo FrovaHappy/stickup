@@ -3,6 +3,7 @@ import type { ClipboardInspectResult, Emote, GifLoopStatus, ResyncStats } from '
 import type { BackupInfo, BackupResult, RestoreResult } from '$lib/types/backup';
 import type { ScannedImage, RawScannedItem, ScannedImageImportRequest, BatchImportResult } from '$lib/types/scanner';
 import type { BgModelStatus, ModelPresetInfo } from '$lib/types/bgRemoval';
+import type { SyncConfig, SyncStatus } from '$lib/types/sync';
 
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
@@ -103,5 +104,11 @@ export const api = {
       asCopy,
       temperature: temperature !== undefined ? temperature : null,
       modelId: modelId || null
-    })
+    }),
+  getCloudSyncConfig: () => invoke<SyncConfig>('get_cloud_sync_config'),
+  saveCloudSyncConfig: (config: SyncConfig) =>
+    invoke<void>('save_cloud_sync_config', { config }),
+  getCloudSyncStatus: () => invoke<SyncStatus>('get_cloud_sync_status'),
+  detectCloudFolders: () => invoke<Record<string, string>>('detect_cloud_folders'),
+  startCloudSync: () => invoke<SyncStatus>('start_cloud_sync')
 };

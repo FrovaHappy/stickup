@@ -172,9 +172,10 @@ fn insert_emote_record(
     format: &str,
     now: &str,
 ) -> Result<i64, String> {
+    let now_millis = chrono::Utc::now().timestamp_millis();
     conn.execute(
-        "INSERT INTO emotes (name, tag, path, original_width, original_height, format, created_at) VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6)",
-        params![name, path, w, h, format, now],
+        "INSERT INTO emotes (name, tag, path, original_width, original_height, format, created_at, updated_at, is_deleted) VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
+        params![name, path, w, h, format, now, now_millis],
     )
     .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
@@ -355,6 +356,7 @@ pub fn list_emotes() -> Result<Vec<Emote>, String> {
                     COALESCE(v.copy_count, 0), COALESCE(v.interaction_count, 0), v.last_used_at
              FROM emotes e
              LEFT JOIN emote_votes v ON v.emote_id = e.id
+             WHERE COALESCE(e.is_deleted, 0) = 0
              ORDER BY e.created_at DESC, e.id DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -1056,8 +1058,12 @@ pub fn delete_emote(id: i64) -> Result<bool, String> {
         }
     }
     let _ = conn.execute("DELETE FROM emote_votes WHERE emote_id = ?1", params![id]);
-    conn.execute("DELETE FROM emotes WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().timestamp_millis();
+    conn.execute(
+        "UPDATE emotes SET is_deleted = 1, updated_at = ?1 WHERE id = ?2",
+        params![now, id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -1154,6 +1160,12 @@ pub fn update_emote_metadata_in_conn(
         )
         .map_err(|e| e.to_string())?;
     }
+
+    let now = chrono::Utc::now().timestamp_millis();
+    let _ = conn.execute(
+        "UPDATE emotes SET updated_at = ?1 WHERE id = ?2",
+        params![now, id],
+    );
 
     Ok(final_path_str)
 }
@@ -2387,6 +2399,84 @@ pub fn apply_remove_background(
     }
 }
 
+#[tauri::command]
+pub fn get_cloud_sync_config() -> Result<crate::services::sync::SyncConfig, String> {
+    let conn = ensure_db()?;
+    crate::services::sync::get_sync_config(&conn)
+}
+
+#[tauri::command]
+pub fn save_cloud_sync_config(config: crate::services::sync::SyncConfig) -> Result<(), String> {
+    let conn = ensure_db()?;
+    crate::services::sync::save_sync_config(&conn, &config)
+}
+
+#[tauri::command]
+pub fn get_cloud_sync_status() -> Result<crate::services::sync::SyncStatus, String> {
+    Ok(crate::services::sync::get_current_sync_status())
+}
+
+#[tauri::command]
+pub fn detect_cloud_folders() -> Result<HashMap<String, String>, String> {
+    Ok(crate::services::sync::detect_cloud_candidates())
+}
+
+#[tauri::command]
+pub async fn start_cloud_sync() -> Result<crate::services::sync::SyncStatus, String> {
+    crate::services::sync::update_current_sync_status(|s| {
+        s.is_syncing = true;
+        s.progress = Some("Iniciando sincronización...".to_string());
+        s.error = None;
+    });
+
+    let (provider, resources_dir, config) = match (|| -> Result<_, String> {
+        let conn = ensure_db()?;
+        let resources_dir = get_active_emotes_dir(&conn);
+        let config = crate::services::sync::get_sync_config(&conn)?;
+
+        if config.provider == "none" {
+            return Err("La sincronización en la nube está desactivada. Selecciona un proveedor primero.".to_string());
+        }
+
+        let provider = crate::services::sync::resolve_configured_provider(&config)?;
+        Ok((provider, resources_dir, config))
+    })() {
+        Ok(vals) => vals,
+        Err(err) => {
+            crate::services::sync::update_current_sync_status(|s| {
+                s.is_syncing = false;
+                s.error = Some(err.clone());
+                s.progress = None;
+            });
+            return Err(err);
+        }
+    };
+
+    let sync_res = crate::services::sync::execute_sync(&provider, &resources_dir).await;
+
+    match sync_res {
+        Ok(status) => {
+            if let Ok(conn) = ensure_db() {
+                let mut updated_config = config;
+                updated_config.last_sync_at = status.last_sync_at;
+                let _ = crate::services::sync::save_sync_config(&conn, &updated_config);
+            }
+            crate::services::sync::update_current_sync_status(|s| {
+                *s = status.clone();
+            });
+            Ok(status)
+        }
+        Err(err) => {
+            crate::services::sync::update_current_sync_status(|s| {
+                s.is_syncing = false;
+                s.error = Some(err.clone());
+                s.progress = None;
+            });
+            Err(err)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2437,7 +2527,9 @@ mod tests {
                 original_width INTEGER,
                 original_height INTEGER,
                 format TEXT,
-                created_at TEXT
+                created_at TEXT,
+                updated_at INTEGER DEFAULT 0,
+                is_deleted INTEGER DEFAULT 0
             );",
         )
         .unwrap();

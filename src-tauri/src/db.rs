@@ -323,7 +323,10 @@ pub fn ensure_db() -> Result<Connection, String> {
             created_at TEXT,
             copy_count INTEGER DEFAULT 0,
             interaction_count INTEGER DEFAULT 0,
-            last_used_at TEXT
+            last_used_at TEXT,
+            updated_at INTEGER DEFAULT 0,
+            is_deleted INTEGER DEFAULT 0,
+            hash TEXT
         );
         CREATE TABLE IF NOT EXISTS emote_votes (
             emote_id INTEGER PRIMARY KEY,
@@ -339,6 +342,13 @@ pub fn ensure_db() -> Result<Connection, String> {
     let _ = conn.execute("ALTER TABLE emotes ADD COLUMN copy_count INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE emotes ADD COLUMN interaction_count INTEGER DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE emotes ADD COLUMN last_used_at TEXT", []);
+    let _ = conn.execute("ALTER TABLE emotes ADD COLUMN updated_at INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE emotes ADD COLUMN is_deleted INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE emotes ADD COLUMN hash TEXT", []);
+    let _ = conn.execute(
+        "UPDATE emotes SET updated_at = CAST((strftime('%s', 'now') || '000') AS INTEGER) WHERE updated_at IS NULL OR updated_at = 0",
+        [],
+    );
     let _ = conn.execute(
         "UPDATE emotes SET path = SUBSTR(path, 5) WHERE path LIKE '\\\\?\\%'",
         [],
