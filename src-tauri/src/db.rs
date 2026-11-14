@@ -68,14 +68,51 @@ fn os_documents_dir() -> Option<PathBuf> {
     None
 }
 
-fn default_emotes_dir() -> PathBuf {
-    os_documents_dir()
-        .unwrap_or_else(project_root)
-        .join("emotes")
-}
-
-fn db_dir_config_file() -> PathBuf {
-    project_root().join(".stickup_db_dir")
+pub fn get_app_resources_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let trimmed = appdata.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed).join("stickup").join("resources");
+            }
+        }
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let trimmed = profile.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed)
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("stickup")
+                    .join("resources");
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+            let trimmed = xdg.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed).join("stickup").join("resources");
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = PathBuf::from(home);
+            #[cfg(target_os = "macos")]
+            {
+                return home_path
+                    .join("Library")
+                    .join("Application Support")
+                    .join("stickup")
+                    .join("resources");
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return home_path.join(".config").join("stickup").join("resources");
+            }
+        }
+    }
+    project_root().join("resources")
 }
 
 pub fn upgrade_legacy_db_in_dir(dir: &Path) {
@@ -88,75 +125,157 @@ pub fn upgrade_legacy_db_in_dir(dir: &Path) {
     }
 }
 
-pub fn get_active_db_dir() -> PathBuf {
-    let cfg = db_dir_config_file();
-    if let Ok(raw) = fs::read_to_string(&cfg) {
-        let clean = clean_path_str(raw.trim());
-        if !clean.is_empty() && !clean.contains("src-tauri") {
-            return PathBuf::from(clean);
+fn count_emotes_in_db_file(db_path: &Path) -> usize {
+    if !db_path.exists() {
+        return 0;
+    }
+    if let Ok(conn) = Connection::open(db_path) {
+        if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM emotes", [], |r| r.get::<_, i64>(0)) {
+            return count.max(0) as usize;
         }
     }
-    let default_dir = default_emotes_dir();
-    if !default_dir.exists() {
-        let _ = fs::create_dir_all(&default_dir);
-    }
-    let abs = default_dir.canonicalize().unwrap_or(default_dir);
-    let abs_str = normalize_path(&abs);
-    let _ = fs::write(&cfg, &abs_str);
-    abs
+    0
 }
 
-pub fn set_active_db_dir(path: &str, migrate: bool) -> Result<String, String> {
-    let p = PathBuf::from(path);
-    if !p.exists() {
-        fs::create_dir_all(&p).map_err(|e| format!("No se pudo crear la carpeta de BD: {}", e))?;
-    }
-    let abs = p.canonicalize().unwrap_or(p);
-    let abs_str = normalize_path(&abs);
+fn migrate_legacy_locations_to_resources(resources_dir: &Path) {
+    let target_db = resources_dir.join(DB_FILE_NAME);
+    let mut candidate_dirs: Vec<PathBuf> = Vec::new();
 
-    if abs_str.contains("src-tauri") {
-        return Err(
-            "No se puede ubicar la base de datos dentro de src-tauri (provocaría recompilaciones)"
-                .to_string(),
-        );
-    }
-
-    let old_dir = get_active_db_dir();
-    upgrade_legacy_db_in_dir(&old_dir);
-    upgrade_legacy_db_in_dir(&abs);
-
-    let old_db = old_dir.join(DB_FILE_NAME);
-    let new_db = abs.join(DB_FILE_NAME);
-
-    if migrate && old_db != new_db && old_db.exists() {
-        fs::copy(&old_db, &new_db)
-            .map_err(|e| format!("No se pudo migrar {} a la nueva ruta: {}", DB_FILE_NAME, e))?;
-        let _ = fs::remove_file(&old_db);
+    // 1. Revisar configuración heredada en .stickup_db_dir
+    let legacy_cfg = project_root().join(".stickup_db_dir");
+    if let Ok(raw) = fs::read_to_string(&legacy_cfg) {
+        let clean = clean_path_str(raw.trim());
+        if !clean.is_empty() {
+            let p = PathBuf::from(&clean);
+            if p.exists() && p != resources_dir {
+                candidate_dirs.push(p);
+            }
+        }
+        let _ = fs::remove_file(&legacy_cfg);
     }
 
-    fs::write(db_dir_config_file(), &abs_str)
-        .map_err(|e| format!("No se pudo guardar la configuración de ruta de BD: {}", e))?;
-
-    let _ = ensure_db()?;
-    Ok(abs_str)
-}
-
-pub fn get_active_emotes_dir(conn: &Connection) -> PathBuf {
-    if let Ok(mut stmt) = conn.prepare("SELECT value FROM settings WHERE key = 'storage_path'") {
-        if let Ok(path_str) = stmt.query_row([], |row| row.get::<_, String>(0)) {
-            let clean = clean_path_str(&path_str);
-            if !clean.contains("src-tauri") && !clean.is_empty() {
-                return PathBuf::from(clean);
+    // 2. Revisar si la base de datos en resources_dir contenía una ruta previa en settings (ej. MEGA / ruta personalizada)
+    if target_db.exists() {
+        if let Ok(conn) = Connection::open(&target_db) {
+            if let Ok(mut stmt) = conn.prepare("SELECT value FROM settings WHERE key = 'storage_path'") {
+                if let Ok(path_str) = stmt.query_row([], |r| r.get::<_, String>(0)) {
+                    let clean = clean_path_str(&path_str);
+                    if !clean.is_empty() {
+                        let p = PathBuf::from(&clean);
+                        if p.exists() && p != resources_dir {
+                            candidate_dirs.push(p);
+                        }
+                    }
+                }
             }
         }
     }
-    let default_dir = get_active_db_dir();
-    let norm = normalize_path(&default_dir);
+
+    // 3. Revisar carpeta Documents/MEGA/MEGAsync/stickers
+    if let Some(docs) = os_documents_dir() {
+        let mega_stickers = docs.join("MEGA").join("MEGAsync").join("stickers");
+        if mega_stickers.exists() && mega_stickers != resources_dir {
+            candidate_dirs.push(mega_stickers);
+        }
+    }
+
+    // 4. Revisar Documents/emotes
+    if let Some(docs) = os_documents_dir() {
+        let docs_emotes = docs.join("emotes");
+        if docs_emotes.exists() && docs_emotes != resources_dir {
+            candidate_dirs.push(docs_emotes);
+        }
+    }
+
+    // 5. Revisar emotes en la raíz del proyecto
+    let pr_emotes = project_root().join("emotes");
+    if pr_emotes.exists() && pr_emotes != resources_dir {
+        candidate_dirs.push(pr_emotes);
+    }
+
+    let target_count = count_emotes_in_db_file(&target_db);
+
+    for dir in candidate_dirs {
+        upgrade_legacy_db_in_dir(&dir);
+        let src_db = dir.join(DB_FILE_NAME);
+
+        // Copiar base de datos si target no existe o si src_db contiene más emotes registrados
+        let src_count = count_emotes_in_db_file(&src_db);
+        if src_db.exists() && (!target_db.exists() || src_count > target_count) {
+            let _ = fs::copy(&src_db, &target_db);
+        }
+
+        // Migrar carpeta backups/ si existe
+        let src_backups = dir.join("backups");
+        let dest_backups = resources_dir.join("backups");
+        if src_backups.exists() && src_backups.is_dir() {
+            let _ = fs::create_dir_all(&dest_backups);
+            if let Ok(entries) = fs::read_dir(&src_backups) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file() {
+                        if let Some(name) = p.file_name() {
+                            let dest = dest_backups.join(name);
+                            if !dest.exists() {
+                                let _ = fs::copy(&p, &dest);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Migrar imágenes sueltas a resources
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let ext = p
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
+                        if let Some(name) = p.file_name() {
+                            let dest = resources_dir.join(name);
+                            if !dest.exists() {
+                                let _ = fs::copy(&p, &dest);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn get_active_db_dir() -> PathBuf {
+    let dir = get_app_resources_dir();
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
+    dir
+}
+
+pub fn get_active_emotes_dir(conn: &Connection) -> PathBuf {
+    #[cfg(test)]
+    {
+        if let Ok(mut stmt) = conn.prepare("SELECT value FROM settings WHERE key = 'storage_path'") {
+            if let Ok(path_str) = stmt.query_row([], |row| row.get::<_, String>(0)) {
+                let clean = clean_path_str(&path_str);
+                if !clean.contains("src-tauri") && !clean.is_empty() {
+                    return PathBuf::from(clean);
+                }
+            }
+        }
+    }
+    let dir = get_active_db_dir();
+    let norm = normalize_path(&dir);
     let _ = conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",
         params![norm],
     );
-    default_dir
+    dir
 }
 
 pub fn ensure_db() -> Result<Connection, String> {
@@ -164,6 +283,7 @@ pub fn ensure_db() -> Result<Connection, String> {
     if !db_dir.as_os_str().is_empty() && !db_dir.exists() {
         let _ = fs::create_dir_all(&db_dir);
     }
+    migrate_legacy_locations_to_resources(&db_dir);
     upgrade_legacy_db_in_dir(&db_dir);
     let db = db_dir.join(DB_FILE_NAME);
     let legacy_root_db = project_root().join(LEGACY_DB_FILE_NAME);
@@ -181,6 +301,12 @@ pub fn ensure_db() -> Result<Connection, String> {
         );",
     )
     .map_err(|e| e.to_string())?;
+
+    let norm = normalize_path(&db_dir);
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",
+        params![norm],
+    );
 
     // Verificación de versión y backup automático preventivo previo a migraciones
     let _ = check_and_backup_on_version_change(&conn);
@@ -217,6 +343,33 @@ pub fn ensure_db() -> Result<Connection, String> {
         "UPDATE emotes SET path = SUBSTR(path, 5) WHERE path LIKE '\\\\?\\%'",
         [],
     );
+
+    // Normalizar rutas de emotes para que apunten al directorio activo de recursos
+    let rows: Vec<(i64, String)> = {
+        if let Ok(mut stmt) = conn.prepare("SELECT id, path FROM emotes") {
+            let mapped = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).ok();
+            mapped.map(|m| m.flatten().collect()).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    };
+    for (id, raw_path) in rows {
+        let clean = clean_path_str(&raw_path);
+        let p = Path::new(&clean);
+        if let Some(fname) = p.file_name() {
+            let target_file = db_dir.join(fname);
+            let target_str = normalize_path(&target_file);
+            if clean != target_str {
+                if !target_file.exists() && p.exists() {
+                    let _ = fs::copy(p, &target_file);
+                }
+                let _ = conn.execute(
+                    "UPDATE emotes SET path = ?1 WHERE id = ?2",
+                    params![target_str, id],
+                );
+            }
+        }
+    }
 
     // Migrar datos históricos de copias desde emotes hacia la tabla dedicada emote_votes
     let _ = conn.execute(
@@ -747,11 +900,16 @@ mod tests {
     }
 
     #[test]
-    fn test_rejects_src_tauri_db_dir() {
-        let tmp = std::env::temp_dir().join("src-tauri").join("test_db_guard");
-        let res = set_active_db_dir(&tmp.to_string_lossy(), false);
-        assert!(res.is_err());
-        let _ = fs::remove_dir_all(&tmp);
+    fn test_get_app_resources_dir() {
+        let p = get_app_resources_dir();
+        assert!(p.ends_with("resources"));
+        assert!(!p.to_string_lossy().is_empty());
+    }
+
+    #[test]
+    fn test_ensure_db() {
+        let conn = ensure_db();
+        assert!(conn.is_ok());
     }
 
     #[test]

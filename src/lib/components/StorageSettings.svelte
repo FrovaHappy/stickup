@@ -2,16 +2,14 @@
   import { onMount } from 'svelte';
   import { open, save } from '@tauri-apps/plugin-dialog';
   import {
-    FolderPen,
     Save,
     Upload,
     Download,
     Database,
-    PackageCheck,
-    Folder,
     RotateCcw,
     Trash2,
-    HardDrive
+    HardDrive,
+    FolderOpen
   } from '@lucide/svelte';
   import { api } from '$lib/services/api';
   import emotes, { loadEmotes } from '$lib/stores/emotes';
@@ -25,11 +23,6 @@
   let message = '';
   let isError = false;
   let isBusy = false;
-
-  let pendingTargetPath: string | null = null;
-  let askDbConflict = false;
-  let currentDbCount = 0;
-  let targetDbCount = 0;
 
   let showRestoreConfirmModal = false;
   let showDeleteConfirmModal = false;
@@ -59,69 +52,13 @@
     }
   });
 
-  async function pickStoragePath() {
-    if (isBusy) return;
+  async function handleOpenStorageDirectory() {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: 'Seleccionar carpeta para emotes y base de datos (.store.db)'
-      });
-
-      if (!selected) return;
-
-      const newPath = Array.isArray(selected) ? selected[0] : selected;
-      if (newPath && newPath.toLowerCase() !== storagePath.toLowerCase()) {
-        pendingTargetPath = newPath;
-        askDbConflict = false;
-      }
+      await api.openStorageDirectory();
     } catch (e: any) {
-      console.error('Error al seleccionar la ruta de almacenamiento:', e);
-      const errMsg = e?.message || e || 'Error al seleccionar carpeta';
-      showStatus(`Error: ${errMsg}`, true);
-      toast.error(`Error al seleccionar carpeta: ${errMsg}`);
-    }
-  }
-
-  function cancelPending() {
-    pendingTargetPath = null;
-    askDbConflict = false;
-  }
-
-  async function applyPendingChange(migrate: boolean, overwriteDb?: boolean) {
-    if (!pendingTargetPath || isBusy) return;
-    const targetPath = pendingTargetPath;
-    isBusy = true;
-
-    try {
-      storagePath = await api.setStoragePath(targetPath, migrate, overwriteDb);
-      pendingTargetPath = null;
-      askDbConflict = false;
-      await loadEmotes();
-      await refreshBackupsList();
-      const statusText = migrate
-        ? overwriteDb === false
-          ? 'Imágenes migradas conservando la base de datos del destino'
-          : 'Emotes y base de datos migrados a la nueva carpeta'
-        : 'Directorio de emotes y base de datos actualizado';
-      showStatus(statusText);
-      toast.success(statusText);
-    } catch (e: any) {
-      const errText = String(e?.message || e || '');
-      if (errText.includes('DB_EXISTS_IN_TARGET')) {
-        const parts = errText.split(':');
-        currentDbCount = Number(parts[1]) || 0;
-        targetDbCount = Number(parts[2]) || 0;
-        askDbConflict = true;
-      } else {
-        pendingTargetPath = null;
-        askDbConflict = false;
-        console.error('Error al aplicar cambio de directorio:', e);
-        showStatus(`Error: ${errText}`, true);
-        toast.error(`Error al aplicar cambio de directorio: ${errText}`);
-      }
-    } finally {
-      isBusy = false;
+      console.error('Error al abrir la carpeta de almacenamiento:', e);
+      const errMsg = e?.message || e || 'Error al abrir la carpeta';
+      toast.error(errMsg);
     }
   }
 
@@ -287,8 +224,8 @@
       </div>
 
       <div class="path-action">
-        <Button variant="outline" size="sm" disabled={isBusy} on:click={pickStoragePath}>
-          <FolderPen size={14} /> Cambiar ruta
+        <Button variant="secondary" size="sm" on:click={handleOpenStorageDirectory}>
+          <FolderOpen size={14} /> Abrir carpeta
         </Button>
       </div>
     </div>
@@ -312,81 +249,6 @@
       {/if}
     </div>
   </div>
-
-  <!-- Alertas de migración y conflicto de base de datos -->
-  {#if pendingTargetPath}
-    <div class="prompt-container">
-      {#if askDbConflict}
-        <Toast
-          variant="warning"
-          title="Ya existe una base de datos (.store.db) en el destino. ¿Cuál deseas conservar?"
-        >
-          <div class="prompt-dest" title={pendingTargetPath}>
-            Destino: <code>{pendingTargetPath}</code>
-          </div>
-          <p class="prompt-desc">
-            Se moverán todas tus imágenes a la nueva carpeta. Elige qué archivo
-            <code>.store.db</code> tendrá prioridad para tus tags, nombres y estadísticas:
-          </p>
-          <svelte:fragment slot="actions">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={isBusy}
-              on:click={() => applyPendingChange(true, true)}
-            >
-              <Database size={14} /> Conservar BD actual ({currentDbCount} emotes)
-            </Button>
-            <Button
-              variant="success"
-              size="sm"
-              disabled={isBusy}
-              on:click={() => applyPendingChange(true, false)}
-            >
-              <Download size={14} /> Conservar BD del destino ({targetDbCount} emotes)
-            </Button>
-            <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
-              Cancelar
-            </Button>
-          </svelte:fragment>
-        </Toast>
-      {:else}
-        <Toast
-          variant="info"
-          title="¿Deseas migrar tus emotes y base de datos a la nueva carpeta?"
-        >
-          <div class="prompt-dest" title={pendingTargetPath}>
-            Destino: <code>{pendingTargetPath}</code>
-          </div>
-          <p class="prompt-desc">
-            <strong>Migrar todo</strong> moverá todas las imágenes actuales, actualizará sus rutas y
-            trasladará <code>.store.db</code> junto con tus tags y estadísticas a la nueva carpeta.
-          </p>
-          <svelte:fragment slot="actions">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={isBusy}
-              on:click={() => applyPendingChange(true)}
-            >
-              <PackageCheck size={14} /> Migrar todo (Imágenes + BD)
-            </Button>
-            <Button
-              variant="success"
-              size="sm"
-              disabled={isBusy}
-              on:click={() => applyPendingChange(false)}
-            >
-              <Folder size={14} /> Solo cambiar ruta
-            </Button>
-            <Button variant="ghost" size="sm" disabled={isBusy} on:click={cancelPending}>
-              Cancelar
-            </Button>
-          </svelte:fragment>
-        </Toast>
-      {/if}
-    </div>
-  {/if}
 
   <!-- Mensajes de estado -->
   {#if isBusy}
@@ -895,33 +757,9 @@
     max-width: 360px;
   }
 
-  /* Contenedores de alerta y modales */
-  .prompt-container,
+  /* Contenedores de estado */
   .status-row {
     width: 100%;
-  }
-
-  .prompt-dest {
-    font-size: 12px;
-    color: #d1d5db;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-bottom: 4px;
-  }
-
-  .prompt-dest code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
-  }
-
-  .prompt-desc {
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.45;
-    color: #9ca3af;
   }
 
   .restore-details {

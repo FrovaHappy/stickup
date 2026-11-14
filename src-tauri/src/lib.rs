@@ -172,7 +172,7 @@ pub fn run() {
             commands::import_from_clipboard,
             commands::inspect_clipboard,
             commands::get_storage_path,
-            commands::set_storage_path,
+            commands::open_storage_directory,
             commands::delete_emote,
             commands::update_tag,
             commands::copy_to_clipboard,

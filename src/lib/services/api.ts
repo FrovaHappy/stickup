@@ -7,8 +7,7 @@ import type { BgModelStatus, ModelPresetInfo } from '$lib/types/bgRemoval';
 export const api = {
   listEmotes: () => invoke<Emote[]>('list_emotes'),
   getStoragePath: () => invoke<string>('get_storage_path'),
-  setStoragePath: (path: string, migrate = true, overwriteDb?: boolean) =>
-    invoke<string>('set_storage_path', { path, migrate, overwriteDb: overwriteDb ?? null }),
+  openStorageDirectory: () => invoke<void>('open_storage_directory'),
   importPaths: (paths: string[]) => invoke<Emote[]>('import_paths', { paths }),
   importRawBytes: (bytes: number[], name?: string) =>
     invoke<Emote>('import_raw_bytes', { bytes, name: name?.trim() || null }),

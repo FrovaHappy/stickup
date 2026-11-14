@@ -1,8 +1,5 @@
 use crate::clipboard::{self, ClipboardPayload};
-use crate::db::{
-    self, clean_path_str, ensure_db, get_active_db_dir, get_active_emotes_dir, normalize_path,
-    set_active_db_dir, upgrade_legacy_db_in_dir, DB_FILE_NAME,
-};
+use crate::db::{self, clean_path_str, ensure_db, get_active_emotes_dir, normalize_path};
 use crate::models::{
     BackupInfo, BackupResult, ClipboardInspectResult, Emote, RestoreResult, ResyncStats,
 };
@@ -402,369 +399,36 @@ pub fn get_storage_path(app: tauri::AppHandle) -> Result<String, String> {
     Ok(normalize_path(&abs))
 }
 
-fn count_db_emotes(db_path: &Path) -> usize {
-    if !db_path.exists() {
-        return 0;
-    }
-    let conn = match Connection::open(db_path) {
-        Ok(c) => c,
-        Err(_) => return 0,
-    };
-    conn.query_row("SELECT COUNT(*) FROM emotes", [], |r| r.get::<_, i64>(0))
-        .unwrap_or(0)
-        .max(0) as usize
-}
-
-/// Copia los metadatos (nombre, tags, votos) de los emotes de `secondary_db` hacia `primary_db`
-/// para los archivos que aún no estén en `primary_db` (o cuyos registros en `primary_db` no tengan tags/nombre propio).
-fn merge_secondary_db_into_primary(secondary_db: &Path, primary_db: &Path, target_dir: &Path) {
-    if !secondary_db.exists() || !primary_db.exists() || secondary_db == primary_db {
-        return;
-    }
-    let sec_conn = match Connection::open(secondary_db) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let pri_conn = match Connection::open(primary_db) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-
-    // Asegurar que las rutas en primary_db apunten a target_dir por nombre de archivo
-    if let Ok(mut stmt) = pri_conn.prepare("SELECT id, path FROM emotes") {
-        let pri_rows: Vec<(i64, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .ok()
-            .into_iter()
-            .flatten()
-            .flatten()
-            .collect();
-        for (id, raw_path) in pri_rows {
-            let clean = clean_path_str(&raw_path);
-            if let Some(fname) = Path::new(&clean).file_name() {
-                let dest = normalize_path(&target_dir.join(fname));
-                if dest != clean {
-                    let _ = pri_conn.execute(
-                        "UPDATE emotes SET path = ?1 WHERE id = ?2",
-                        params![dest, id],
-                    );
-                }
-            }
-        }
-    }
-
-    // Mapear archivos existentes en primary_db por nombre de archivo en minúsculas
-    let mut pri_by_fname: HashMap<String, (i64, String, Option<String>)> = HashMap::new();
-    if let Ok(mut stmt) = pri_conn.prepare("SELECT id, name, tag, path FROM emotes") {
-        let rows: Vec<(i64, Option<String>, Option<String>, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-            .ok()
-            .into_iter()
-            .flatten()
-            .flatten()
-            .collect();
-        for (id, name, tag, raw_path) in rows {
-            if let Some(fname) = Path::new(&clean_path_str(&raw_path))
-                .file_name()
-                .and_then(|s| s.to_str())
-            {
-                pri_by_fname.insert(fname.to_lowercase(), (id, name.unwrap_or_default(), tag));
-            }
-        }
-    }
-
-    let query = "SELECT e.name, e.tag, e.path, e.original_width, e.original_height, e.format, e.created_at,
-                        COALESCE(v.copy_count, e.copy_count, 0),
-                        COALESCE(v.interaction_count, e.interaction_count, 0),
-                        COALESCE(v.last_used_at, e.last_used_at)
-                 FROM emotes e
-                 LEFT JOIN emote_votes v ON v.emote_id = e.id";
-    let mut stmt = match sec_conn.prepare(query) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-
-    let sec_rows: Vec<(
-        Option<String>,
-        Option<String>,
-        String,
-        i32,
-        i32,
-        String,
-        String,
-        i64,
-        i64,
-        Option<String>,
-    )> = stmt
-        .query_map([], |r| {
-            Ok((
-                r.get(0)?,
-                r.get(1)?,
-                r.get(2)?,
-                r.get::<_, Option<i32>>(3)?.unwrap_or(0),
-                r.get::<_, Option<i32>>(4)?.unwrap_or(0),
-                r.get::<_, Option<String>>(5)?.unwrap_or_else(|| "webp".to_string()),
-                r.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                r.get(7)?,
-                r.get(8)?,
-                r.get(9)?,
-            ))
-        })
-        .ok()
-        .into_iter()
-        .flatten()
-        .flatten()
-        .collect();
-
-    for (name, tag, raw_path, w, h, format, created_at, copies, interactions, last_used) in sec_rows
-    {
-        let clean = clean_path_str(&raw_path);
-        let p = Path::new(&clean);
-        let fname = match p.file_name().and_then(|s| s.to_str()) {
-            Some(f) => f,
-            None => continue,
-        };
-        let stem = extract_stem(p);
-        let dest_path = target_dir.join(fname);
-        let dest_str = normalize_path(&dest_path);
-
-        if let Some(&(pri_id, ref pri_name, ref pri_tag)) =
-            pri_by_fname.get(&fname.to_lowercase())
-        {
-            // Si el registro primario tenía nombre autogenerado (igual al UUID) y el secundario tiene nombre propio, conservarlo
-            if let Some(ref sec_name) = name {
-                if !sec_name.is_empty() && (pri_name.is_empty() || pri_name == &stem) && sec_name != &stem {
-                    let _ = pri_conn.execute(
-                        "UPDATE emotes SET name = ?1 WHERE id = ?2",
-                        params![sec_name, pri_id],
-                    );
-                }
-            }
-            // Si el registro primario no tenía tags y el secundario sí, conservarlos
-            if pri_tag.as_deref().unwrap_or("").trim().is_empty() {
-                if let Some(ref sec_tag) = tag {
-                    if !sec_tag.trim().is_empty() {
-                        let _ = pri_conn.execute(
-                            "UPDATE emotes SET tag = ?1 WHERE id = ?2",
-                            params![sec_tag, pri_id],
-                        );
-                    }
-                }
-            }
-            if copies > 0 || interactions > 0 {
-                let _ = pri_conn.execute(
-                    "INSERT INTO emote_votes (emote_id, copy_count, interaction_count, score, last_used_at)
-                     VALUES (?1, ?2, ?3, ?2, ?4)
-                     ON CONFLICT(emote_id) DO UPDATE SET
-                         copy_count = MAX(copy_count, excluded.copy_count),
-                         interaction_count = MAX(interaction_count, excluded.interaction_count),
-                         score = MAX(copy_count, excluded.copy_count),
-                         last_used_at = COALESCE(last_used_at, excluded.last_used_at)",
-                    params![pri_id, copies, interactions, last_used],
-                );
-            }
-        } else {
-            // Insertar emote que venía de la otra carpeta con todos sus metadatos intactos
-            if pri_conn
-                .execute(
-                    "INSERT INTO emotes (name, tag, path, original_width, original_height, format, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![
-                        name.unwrap_or_else(|| stem),
-                        tag,
-                        dest_str,
-                        w,
-                        h,
-                        format,
-                        created_at
-                    ],
-                )
-                .is_ok()
-            {
-                let new_id = pri_conn.last_insert_rowid();
-                if copies > 0 || interactions > 0 {
-                    let _ = pri_conn.execute(
-                        "INSERT OR REPLACE INTO emote_votes (emote_id, copy_count, interaction_count, score, last_used_at)
-                         VALUES (?1, ?2, ?3, ?2, ?4)",
-                        params![new_id, copies, interactions, last_used],
-                    );
-                }
-            }
-        }
-    }
-}
-
 #[tauri::command]
-pub fn set_storage_path(
-    app: tauri::AppHandle,
-    path: String,
-    migrate: Option<bool>,
-    overwrite_db: Option<bool>,
-) -> Result<String, String> {
-    use tauri::Manager;
-    let trimmed_input = path.trim();
-    if trimmed_input.is_empty() {
-        return Err("La ruta de almacenamiento no puede estar vacía".to_string());
-    }
-    if trimmed_input.to_lowercase().contains("src-tauri") {
-        return Err(
-            "No se puede ubicar la carpeta de emotes y base de datos dentro de src-tauri"
-                .to_string(),
-        );
-    }
-    let p = PathBuf::from(trimmed_input);
-    if !p.exists() {
-        fs::create_dir_all(&p).map_err(|e| format!("No se pudo crear la carpeta: {}", e))?;
-    }
-    let abs = p.canonicalize().unwrap_or(p);
-    let abs_str = normalize_path(&abs);
-
-    if abs_str.to_lowercase().contains("src-tauri") {
-        return Err(
-            "No se puede ubicar la carpeta de emotes y base de datos dentro de src-tauri"
-                .to_string(),
-        );
+pub fn open_storage_directory() -> Result<(), String> {
+    let dir = crate::db::get_app_resources_dir();
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
     }
 
-    let should_migrate = migrate.unwrap_or(false);
-    let cur_db_dir = get_active_db_dir();
-    let cur_db_abs = cur_db_dir.canonicalize().unwrap_or(cur_db_dir);
-    upgrade_legacy_db_in_dir(&cur_db_abs);
-    upgrade_legacy_db_in_dir(&abs);
-    let old_db = cur_db_abs.join(DB_FILE_NAME);
-    let new_db = abs.join(DB_FILE_NAME);
-
-    let old_count = count_db_emotes(&old_db);
-    let new_count = count_db_emotes(&new_db);
-
-    if should_migrate
-        && old_db != new_db
-        && old_count > 0
-        && new_count > 0
-        && overwrite_db.is_none()
+    #[cfg(target_os = "windows")]
     {
-        return Err(format!("DB_EXISTS_IN_TARGET:{}:{}", old_count, new_count));
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("No se pudo abrir el explorador de archivos: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("No se pudo abrir el explorador de archivos: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("No se pudo abrir el explorador de archivos: {}", e))?;
     }
 
-    let replace_target_db = match overwrite_db {
-        Some(v) => v,
-        None => {
-            if old_count == 0 && new_count > 0 {
-                false
-            } else {
-                true
-            }
-        }
-    };
-
-    if should_migrate {
-        let conn = ensure_db()?;
-        let old_dir = get_active_emotes_dir(&conn);
-        let old_abs = old_dir.canonicalize().unwrap_or(old_dir);
-        let old_str = normalize_path(&old_abs);
-
-        if old_str.to_lowercase() != abs_str.to_lowercase() {
-            // 1. Migrar archivos registrados en la tabla emotes y actualizar sus rutas
-            let rows: Vec<(i64, String)> = {
-                let mut stmt = conn
-                    .prepare("SELECT id, path FROM emotes")
-                    .map_err(|e| e.to_string())?;
-                let mapped = stmt
-                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-                    .map_err(|e| e.to_string())?;
-                mapped.flatten().collect()
-            };
-
-            for (id, raw_path) in rows {
-                let clean = clean_path_str(&raw_path);
-                let src_path = Path::new(&clean);
-                if let Some(file_name) = src_path.file_name() {
-                    let dest_path = abs.join(file_name);
-                    let dest_str = normalize_path(&dest_path);
-
-                    if src_path.exists() && src_path != dest_path {
-                        if !dest_path.exists() || replace_target_db {
-                            if fs::copy(src_path, &dest_path).is_ok() {
-                                let _ = fs::remove_file(src_path);
-                            }
-                        } else {
-                            let _ = fs::remove_file(src_path);
-                        }
-                    }
-
-                    let _ = conn.execute(
-                        "UPDATE emotes SET path = ?1 WHERE id = ?2",
-                        params![dest_str, id],
-                    );
-                }
-            }
-
-            // 2. Migrar imágenes sueltas que estuvieran en la carpeta anterior
-            if old_abs.exists() && old_abs.is_dir() {
-                if let Ok(entries) = fs::read_dir(&old_abs) {
-                    for entry in entries.flatten() {
-                        let entry_path = entry.path();
-                        if !entry_path.is_file() {
-                            continue;
-                        }
-                        let ext = entry_path
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp") {
-                            if let Some(fname) = entry_path.file_name() {
-                                let dest_path = abs.join(fname);
-                                if entry_path != dest_path && !dest_path.exists() {
-                                    if fs::copy(&entry_path, &dest_path).is_ok() {
-                                        let _ = fs::remove_file(&entry_path);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",
-            params![&abs_str],
-        )
-        .map_err(|e| e.to_string())?;
-        drop(conn);
-
-        if old_db != new_db && old_db.exists() && new_db.exists() {
-            if replace_target_db {
-                merge_secondary_db_into_primary(&new_db, &old_db, &abs);
-            } else {
-                merge_secondary_db_into_primary(&old_db, &new_db, &abs);
-            }
-        }
-    }
-
-    let _ = set_active_db_dir(&abs_str, should_migrate && replace_target_db)?;
-
-    if should_migrate && !replace_target_db && old_db != new_db && old_db.exists() {
-        let _ = fs::remove_file(&old_db);
-    }
-
-    if !should_migrate || !replace_target_db {
-        let conn = ensure_db()?;
-        conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('storage_path', ?1)",
-            params![&abs_str],
-        )
-        .map_err(|e| e.to_string())?;
-    }
-
-    if should_migrate {
-        let _ = resync_emotes();
-    }
-
-    let _ = app.asset_protocol_scope().allow_directory(&abs, true);
-
-    Ok(abs_str)
+    Ok(())
 }
 
 fn import_single_file(
